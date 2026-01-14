@@ -1201,9 +1201,10 @@ pub fn classify_all_modes(
     let Some(corner_indices) = find_corner_nodes(nodes, DEFAULT_CORNER_TOL) else {
         return families;
     };
+    let mode_count = mode_shapes.ncols();
 
     for (idx, freq) in frequencies.iter().copied().enumerate() {
-        if idx >= mode_shapes.ncols() {
+        if idx >= mode_count {
             break;
         }
         let shape_col = mode_shapes.column(idx);
