@@ -11,6 +11,7 @@ type Matrix3x8 = SMatrix<f64, 3, 8>;
 const DOF_PER_NODE: usize = 3;
 const DEFAULT_CORNER_TOL: f64 = 1e-6;
 const Z_DIR_INDEX: usize = 2;
+// 1/sqrt(3) Gauss point coordinate for 2×2×2 quadrature
 const GAUSS_G: f64 = 0.577_350_269_189_625_8;
 const MIN_DET_J: f64 = 1e-12;
 
@@ -136,10 +137,10 @@ pub fn compute_hex8_matrices(
 
         let j: Matrix3<f64> = d_n_nat * node_coords;
         let det_j = j.determinant();
-        let det_j_abs = det_j.abs();
-        if det_j_abs <= MIN_DET_J || det_j < 0.0 {
+        if det_j <= MIN_DET_J {
             continue;
         }
+        let det_j_abs = det_j.abs();
         let Some(j_inv) = j.try_inverse() else {
             continue;
         };
@@ -547,6 +548,7 @@ mod tests {
     fn shape_function_derivatives_match_reference() {
         let (xi, eta, zeta) = (0.2, -0.4, 0.6);
         let d = shape_function_derivatives_hex8(xi, eta, zeta);
+        // Expected derivatives from reference formulas at (xi, eta, zeta) = (0.2, -0.4, 0.6)
         let expected = Matrix3x8::from_row_slice(&[
             -0.07, 0.07, 0.03, -0.03, -0.28, 0.28, 0.12, -0.12, // d/dxi
             -0.04, -0.06, 0.06, 0.04, -0.16, -0.24, 0.24, 0.16, // d/deta
@@ -562,11 +564,11 @@ mod tests {
 
     #[test]
     fn elasticity_matrix_matches_reference_definition() {
-        let e = 200e9;
+        let e_pa = 200e9;
         let nu = 0.3;
-        let d = elasticity_matrix_3d(e, nu);
+        let d = elasticity_matrix_3d(e_pa, nu);
 
-        let factor = e / ((1.0 + nu) * (1.0 - 2.0 * nu));
+        let factor = e_pa / ((1.0 + nu) * (1.0 - 2.0 * nu));
         let normal = factor * (1.0 - nu);
         let coupling = factor * nu;
         let shear = factor * (1.0 - 2.0 * nu) / 2.0;
