@@ -136,7 +136,8 @@ pub fn compute_hex8_matrices(
 
         let j: Matrix3<f64> = d_n_nat * node_coords;
         let det_j = j.determinant();
-        if det_j <= MIN_DET_J {
+        let det_j_abs = det_j.abs();
+        if det_j_abs <= MIN_DET_J || det_j < 0.0 {
             continue;
         }
         let Some(j_inv) = j.try_inverse() else {
@@ -144,7 +145,7 @@ pub fn compute_hex8_matrices(
         };
 
         let d_n_phys = j_inv * d_n_nat;
-        let weight = w * det_j;
+        let weight = w * det_j_abs;
 
         let mut b = Matrix6x24::zeros();
         for i in 0..8 {
