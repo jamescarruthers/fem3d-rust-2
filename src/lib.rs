@@ -11,6 +11,7 @@ type Matrix3x8 = SMatrix<f64, 3, 8>;
 const DOF_PER_NODE: usize = 3;
 const DEFAULT_CORNER_TOL: f64 = 1e-6;
 const Z_DIR_INDEX: usize = 2;
+const GAUSS_G: f64 = 0.577_350_269_189_625_8;
 
 /// Mode classification following Soares top-corner displacement method
 /// (see reference/details.md section 12).
@@ -25,16 +26,15 @@ pub enum ModeType {
 
 /// Return 2×2×2 Gauss points and weights.
 pub fn gauss_points_3d() -> ([Vector3<f64>; 8], SVector<f64, 8>) {
-    let g = 1.0 / 3.0_f64.sqrt();
     let points = [
-        Vector3::new(-g, -g, -g),
-        Vector3::new(g, -g, -g),
-        Vector3::new(g, g, -g),
-        Vector3::new(-g, g, -g),
-        Vector3::new(-g, -g, g),
-        Vector3::new(g, -g, g),
-        Vector3::new(g, g, g),
-        Vector3::new(-g, g, g),
+        Vector3::new(-GAUSS_G, -GAUSS_G, -GAUSS_G),
+        Vector3::new(GAUSS_G, -GAUSS_G, -GAUSS_G),
+        Vector3::new(GAUSS_G, GAUSS_G, -GAUSS_G),
+        Vector3::new(-GAUSS_G, GAUSS_G, -GAUSS_G),
+        Vector3::new(-GAUSS_G, -GAUSS_G, GAUSS_G),
+        Vector3::new(GAUSS_G, -GAUSS_G, GAUSS_G),
+        Vector3::new(GAUSS_G, GAUSS_G, GAUSS_G),
+        Vector3::new(-GAUSS_G, GAUSS_G, GAUSS_G),
     ];
     let weights = SVector::<f64, 8>::from_element(1.0);
     (points, weights)
@@ -135,7 +135,7 @@ pub fn compute_hex8_matrices(
 
         let j: Matrix3<f64> = d_n_nat * node_coords;
         let det_j = j.determinant();
-        if det_j.abs() <= f64::EPSILON {
+        if det_j <= f64::EPSILON {
             continue;
         }
         let Some(j_inv) = j.try_inverse() else {
@@ -507,35 +507,36 @@ pub fn classify_all_modes(
 mod tests {
     use super::*;
 
+    const TEST_TOL: f64 = 1e-12;
+
     #[test]
     fn shape_functions_sum_to_one() {
         let n = shape_functions_hex8(0.2, -0.3, 0.1);
         let sum: f64 = n.iter().sum();
-        assert!((sum - 1.0).abs() < 1e-12);
+        assert!((sum - 1.0).abs() < TEST_TOL);
     }
 
     #[test]
     fn gauss_points_match_reference() {
         let (points, weights) = gauss_points_3d();
-        let g = 1.0 / 3.0_f64.sqrt();
         let expected = [
-            (-g, -g, -g),
-            (g, -g, -g),
-            (g, g, -g),
-            (-g, g, -g),
-            (-g, -g, g),
-            (g, -g, g),
-            (g, g, g),
-            (-g, g, g),
+            (-GAUSS_G, -GAUSS_G, -GAUSS_G),
+            (GAUSS_G, -GAUSS_G, -GAUSS_G),
+            (GAUSS_G, GAUSS_G, -GAUSS_G),
+            (-GAUSS_G, GAUSS_G, -GAUSS_G),
+            (-GAUSS_G, -GAUSS_G, GAUSS_G),
+            (GAUSS_G, -GAUSS_G, GAUSS_G),
+            (GAUSS_G, GAUSS_G, GAUSS_G),
+            (-GAUSS_G, GAUSS_G, GAUSS_G),
         ];
 
         for (p, (ex, ey, ez)) in points.iter().zip(expected.iter()) {
-            assert!((p.x - ex).abs() < 1e-12);
-            assert!((p.y - ey).abs() < 1e-12);
-            assert!((p.z - ez).abs() < 1e-12);
+            assert!((p.x - ex).abs() < TEST_TOL);
+            assert!((p.y - ey).abs() < TEST_TOL);
+            assert!((p.z - ez).abs() < TEST_TOL);
         }
         for w in weights.iter() {
-            assert!((*w - 1.0).abs() < 1e-12);
+            assert!((*w - 1.0).abs() < TEST_TOL);
         }
     }
 
@@ -551,7 +552,7 @@ mod tests {
 
         for i in 0..3 {
             for j in 0..8 {
-                assert!((d[(i, j)] - expected[(i, j)]).abs() < 1e-12);
+                assert!((d[(i, j)] - expected[(i, j)]).abs() < TEST_TOL);
             }
         }
     }
