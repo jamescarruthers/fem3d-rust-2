@@ -22,6 +22,9 @@ pub const LAMBDA_TOL: f64 = 1e-12;
 /// Eigenvalue threshold used to discard the near-zero rigid-body modes of a free-free bar
 /// (matches the Python reference's 100.0 cutoff).
 pub const RIGID_BODY_LAMBDA_THRESHOLD: f64 = 100.0;
+/// Frequency threshold (Hz) to remove any residual near-rigid-body modes that survive the
+/// lambda cutoff on large DOF problems.
+pub const MIN_FREQUENCY_HZ: f64 = 5.0;
 /// Default shift for shift-invert Lanczos (targets eigenvalues near this value).
 pub const DEFAULT_SHIFT: f64 = 1.0;
 /// DOF threshold above which sparse solver is used automatically.
@@ -477,6 +480,13 @@ pub fn compute_global_matrices_dense(
     )
 }
 
+fn filter_and_truncate_frequencies(mut freqs: Vec<f64>, num_modes: usize) -> Vec<f64> {
+    freqs.retain(|f| *f > MIN_FREQUENCY_HZ);
+    freqs.sort_by(|a, b| a.total_cmp(b));
+    freqs.truncate(num_modes.min(freqs.len()));
+    freqs
+}
+
 /// Compute modal frequencies (Hz) for a small mesh using dense generalized eigenvalue solve.
 ///
 /// Returns an empty vector if the mass matrix is not positive definite.
@@ -498,7 +508,7 @@ pub fn compute_modal_frequencies(
     let a = l_inv.transpose() * k * l_inv;
 
     let eig = SymmetricEigen::new(a);
-    let mut freqs: Vec<f64> = eig
+    let freqs: Vec<f64> = eig
         .eigenvalues
         .iter()
         .copied()
@@ -506,9 +516,7 @@ pub fn compute_modal_frequencies(
         .map(|lambda| lambda.sqrt() / (2.0 * std::f64::consts::PI))
         .collect();
 
-    freqs.sort_by(|a, b| a.total_cmp(b));
-    freqs.truncate(num_modes.min(freqs.len()));
-    freqs
+    filter_and_truncate_frequencies(freqs, num_modes)
 }
 
 // ============================================================================
@@ -745,10 +753,12 @@ pub fn compute_modal_frequencies_sparse(
     let (k, m) = compute_global_matrices_sparse(mesh, e, nu, rho);
     let (eigenvalues, _) = lanczos_shift_invert(&k, &m, num_modes, DEFAULT_SHIFT);
 
-    eigenvalues
+    let freqs: Vec<f64> = eigenvalues
         .iter()
         .map(|&lambda| lambda.sqrt() / (2.0 * std::f64::consts::PI))
-        .collect()
+        .collect();
+
+    filter_and_truncate_frequencies(freqs, num_modes)
 }
 
 /// Compute modal frequencies with automatic solver selection.
@@ -1041,10 +1051,12 @@ pub fn compute_modal_frequencies_sprs(
     let (k, m) = compute_global_matrices_sprs(mesh, e, nu, rho);
     let (eigenvalues, _) = lanczos_shift_invert_sprs(&k, &m, num_modes, DEFAULT_SHIFT);
 
-    eigenvalues
+    let freqs: Vec<f64> = eigenvalues
         .iter()
         .map(|&lambda| lambda.sqrt() / (2.0 * std::f64::consts::PI))
-        .collect()
+        .collect();
+
+    filter_and_truncate_frequencies(freqs, num_modes)
 }
 
 /// Compute modal frequencies with configurable solver and backend.
@@ -1368,6 +1380,13 @@ mod tests {
             assert!(f.is_finite());
             assert!(f > 0.0);
         }
+    }
+
+    #[test]
+    fn low_frequency_rigid_body_modes_are_filtered_out() {
+        let freqs = vec![1.8, 1.8, 1.8, 357.7];
+        let filtered = filter_and_truncate_frequencies(freqs, 4);
+        assert_eq!(filtered, vec![357.7]);
     }
 
     #[test]
