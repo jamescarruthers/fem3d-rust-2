@@ -82,7 +82,7 @@ pub struct Cut {
 }
 
 impl Cut {
-    /// Create a new cut with validation.
+    /// Create a new cut.
     pub fn new(lambda: f64, h: f64) -> Self {
         Cut { lambda, h }
     }
@@ -113,7 +113,7 @@ pub fn compute_height(x: f64, cuts: &[Cut], length: f64, h0: f64) -> f64 {
         .collect();
 
     // Sort by lambda descending (largest first = outermost)
-    containing_cuts.sort_by(|a, b| b.lambda.partial_cmp(&a.lambda).unwrap());
+    containing_cuts.sort_by(|a, b| b.lambda.partial_cmp(&a.lambda).unwrap_or(std::cmp::Ordering::Equal));
 
     // Return innermost (smallest lambda) containing cut's height, or h0 if outside all cuts
     containing_cuts.last().map(|cut| cut.h).unwrap_or(h0)
@@ -138,7 +138,7 @@ pub fn generate_element_heights(cuts: &[Cut], length: f64, h0: f64, num_elements
 
     // Sort cuts by lambda descending (outermost first)
     let mut sorted_cuts: Vec<Cut> = cuts.to_vec();
-    sorted_cuts.sort_by(|a, b| b.lambda.partial_cmp(&a.lambda).unwrap());
+    sorted_cuts.sort_by(|a, b| b.lambda.partial_cmp(&a.lambda).unwrap_or(std::cmp::Ordering::Equal));
 
     // Build list of discontinuity positions with heights on each side
     let mut discontinuities: Vec<(f64, f64, f64)> = Vec::new();
@@ -167,7 +167,7 @@ pub fn generate_element_heights(cuts: &[Cut], length: f64, h0: f64, num_elements
     }
 
     // Sort discontinuities by position
-    discontinuities.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    discontinuities.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
     // For each element, compute the appropriate height
     let mut heights = Vec::with_capacity(num_elements);
@@ -229,7 +229,7 @@ pub fn genes_to_cuts(genes: &[f64]) -> Vec<Cut> {
     }
 
     // Sort by lambda descending (largest first)
-    cuts.sort_by(|a, b| b.lambda.partial_cmp(&a.lambda).unwrap());
+    cuts.sort_by(|a, b| b.lambda.partial_cmp(&a.lambda).unwrap_or(std::cmp::Ordering::Equal));
     cuts
 }
 
@@ -244,7 +244,7 @@ pub fn genes_to_cuts(genes: &[f64]) -> Vec<Cut> {
 /// Flat array of genes [lambda_1, h_1, lambda_2, h_2, ...]
 pub fn cuts_to_genes(cuts: &[Cut]) -> Vec<f64> {
     let mut sorted_cuts = cuts.to_vec();
-    sorted_cuts.sort_by(|a, b| b.lambda.partial_cmp(&a.lambda).unwrap());
+    sorted_cuts.sort_by(|a, b| b.lambda.partial_cmp(&a.lambda).unwrap_or(std::cmp::Ordering::Equal));
     
     let mut genes = Vec::with_capacity(sorted_cuts.len() * 2);
     for cut in sorted_cuts {
@@ -283,7 +283,7 @@ pub fn generate_adaptive_mesh_1d(
 
     // Sort cuts by lambda descending
     let mut sorted_cuts: Vec<Cut> = cuts.to_vec();
-    sorted_cuts.sort_by(|a, b| b.lambda.partial_cmp(&a.lambda).unwrap());
+    sorted_cuts.sort_by(|a, b| b.lambda.partial_cmp(&a.lambda).unwrap_or(std::cmp::Ordering::Equal));
 
     // Find all discontinuity positions
     let mut discontinuities: Vec<f64> = Vec::new();
@@ -296,7 +296,7 @@ pub fn generate_adaptive_mesh_1d(
         discontinuities.push(left_boundary);
         discontinuities.push(right_boundary);
     }
-    discontinuities.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    discontinuities.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
     // Define refinement zones around each discontinuity
     let transition_dist = transition_width * length;
@@ -370,7 +370,7 @@ pub fn generate_adaptive_mesh_1d(
             disc_with_heights.push((right_boundary, h_inside_right, h_outside_right));
         }
     }
-    disc_with_heights.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    disc_with_heights.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
     for i in 0..num_elements {
         let x_start = x_positions[i];
