@@ -419,6 +419,10 @@ pub fn compute_global_matrices_dense(
     for nodes in &mesh.elements {
         let mut coords = NodeCoords::zeros();
         for (i, node_idx) in nodes.iter().copied().enumerate() {
+            assert!(
+                node_idx < mesh.nodes.len(),
+                "element references invalid node index"
+            );
             let node = mesh.nodes[node_idx];
             coords[(i, 0)] = node.x;
             coords[(i, 1)] = node.y;
@@ -451,6 +455,7 @@ pub fn compute_modal_frequencies(
         return Vec::new();
     };
     let m_inv = chol.inverse();
+    // Dense transform is acceptable here because this helper targets small test meshes.
     let a = m_inv.transpose() * k * m_inv;
 
     let eig = SymmetricEigen::new(a);
@@ -462,7 +467,7 @@ pub fn compute_modal_frequencies(
         .map(|lambda| lambda.sqrt() / (2.0 * std::f64::consts::PI))
         .collect();
 
-    freqs.sort_by(|a, b| a.total_cmp(b));
+    freqs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     freqs.truncate(num_modes.min(freqs.len()));
     freqs
 }
