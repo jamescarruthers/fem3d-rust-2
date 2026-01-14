@@ -85,7 +85,7 @@ fn sapele_bar_frequency_converges_with_mesh_refinement() {
     let test_cases = [
         (5, 2, 2),
         (10, 2, 3),
-        (20, 2, 4),
+        (120, 2, 12),
     ];
 
     let mut prev_freq: Option<f64> = None;
