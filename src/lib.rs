@@ -16,7 +16,8 @@ const Z_DIR_INDEX: usize = 2;
 const GAUSS_G: f64 = 0.577_350_269_189_625_8;
 const MIN_DET_J: f64 = 1e-12;
 pub const LAMBDA_TOL: f64 = 1e-12;
-/// Eigenvalue threshold used to discard rigid-body modes (matches Python reference).
+/// Eigenvalue threshold used to discard the near-zero rigid-body modes of a free-free bar
+/// (matches the Python reference’s 100.0 cutoff).
 pub const RIGID_BODY_LAMBDA_THRESHOLD: f64 = 100.0;
 
 /// Mode classification following Soares top-corner displacement method
