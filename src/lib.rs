@@ -508,6 +508,7 @@ mod tests {
     use super::*;
 
     const TEST_TOL: f64 = 1e-12;
+    const ELASTICITY_TOL: f64 = 1e-9;
 
     #[test]
     fn shape_functions_sum_to_one() {
@@ -568,20 +569,20 @@ mod tests {
         let coupling = factor * nu;
         let shear = factor * (1.0 - 2.0 * nu) / 2.0;
 
-        assert!((d[(0, 0)] - normal).abs() < 1e-9);
-        assert!((d[(1, 1)] - normal).abs() < 1e-9);
-        assert!((d[(2, 2)] - normal).abs() < 1e-9);
+        assert!((d[(0, 0)] - normal).abs() < ELASTICITY_TOL);
+        assert!((d[(1, 1)] - normal).abs() < ELASTICITY_TOL);
+        assert!((d[(2, 2)] - normal).abs() < ELASTICITY_TOL);
 
-        assert!((d[(0, 1)] - coupling).abs() < 1e-9);
-        assert!((d[(1, 0)] - coupling).abs() < 1e-9);
-        assert!((d[(0, 2)] - coupling).abs() < 1e-9);
-        assert!((d[(2, 0)] - coupling).abs() < 1e-9);
-        assert!((d[(1, 2)] - coupling).abs() < 1e-9);
-        assert!((d[(2, 1)] - coupling).abs() < 1e-9);
+        assert!((d[(0, 1)] - coupling).abs() < ELASTICITY_TOL);
+        assert!((d[(1, 0)] - coupling).abs() < ELASTICITY_TOL);
+        assert!((d[(0, 2)] - coupling).abs() < ELASTICITY_TOL);
+        assert!((d[(2, 0)] - coupling).abs() < ELASTICITY_TOL);
+        assert!((d[(1, 2)] - coupling).abs() < ELASTICITY_TOL);
+        assert!((d[(2, 1)] - coupling).abs() < ELASTICITY_TOL);
 
-        assert!((d[(3, 3)] - shear).abs() < 1e-9);
-        assert!((d[(4, 4)] - shear).abs() < 1e-9);
-        assert!((d[(5, 5)] - shear).abs() < 1e-9);
+        assert!((d[(3, 3)] - shear).abs() < ELASTICITY_TOL);
+        assert!((d[(4, 4)] - shear).abs() < ELASTICITY_TOL);
+        assert!((d[(5, 5)] - shear).abs() < ELASTICITY_TOL);
     }
 
     #[test]
