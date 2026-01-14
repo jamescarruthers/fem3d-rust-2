@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use nalgebra::linalg::SymmetricEigen;
 use nalgebra::{DMatrix, DVector, Matrix3, SMatrix, SVector, Vector3};
 use nalgebra_sparse::{CooMatrix, CsrMatrix};
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "sprs-backend")]
 use sprs::{CsMat, TriMat};
@@ -626,6 +627,158 @@ pub struct Mesh3d {
     pub nodes: Vec<Vector3<f64>>,
     pub elements: Vec<[usize; 8]>,
     pub heights_per_element: Vec<f64>,
+}
+
+/// Serializable 3D node position for frontend visualization.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SerializableNode {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+}
+
+/// Serializable hexahedral element for frontend visualization.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SerializableElement {
+    /// Indices of the 8 nodes that form this hexahedral element.
+    /// Node ordering: bottom face (z-), then top face (z+), counterclockwise.
+    pub nodes: [usize; 8],
+}
+
+/// Serializable mesh data for frontend visualization.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SerializableMesh {
+    /// Node positions in 3D space.
+    pub nodes: Vec<SerializableNode>,
+    /// Hexahedral elements defined by node indices.
+    pub elements: Vec<SerializableElement>,
+    /// Height value for each element (useful for coloring/visualization).
+    pub element_heights: Vec<f64>,
+    /// Mesh metadata.
+    pub metadata: MeshMetadata,
+}
+
+/// Metadata about the mesh for frontend display.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MeshMetadata {
+    /// Total number of nodes.
+    pub num_nodes: usize,
+    /// Total number of elements.
+    pub num_elements: usize,
+    /// Total degrees of freedom (3 * num_nodes).
+    pub num_dof: usize,
+    /// Bounding box minimum coordinates.
+    pub bbox_min: [f64; 3],
+    /// Bounding box maximum coordinates.
+    pub bbox_max: [f64; 3],
+}
+
+impl Mesh3d {
+    /// Convert the mesh to a serializable format for frontend visualization.
+    ///
+    /// # Returns
+    /// A `SerializableMesh` that can be serialized to JSON for frontend consumption.
+    ///
+    /// # Example
+    /// ```
+    /// use fem3d_rust_2::{Cut, generate_element_heights, generate_bar_mesh_3d};
+    ///
+    /// let cuts = vec![Cut::new(0.1, 0.015)];
+    /// let heights = generate_element_heights(&cuts, 0.5, 0.024, 20);
+    /// let mesh = generate_bar_mesh_3d(0.5, 0.03, &heights, 20, 2, 2);
+    ///
+    /// let serializable = mesh.to_serializable();
+    /// let json = serde_json::to_string(&serializable).unwrap();
+    /// ```
+    pub fn to_serializable(&self) -> SerializableMesh {
+        // Convert nodes
+        let nodes: Vec<SerializableNode> = self
+            .nodes
+            .iter()
+            .map(|v| SerializableNode {
+                x: v.x,
+                y: v.y,
+                z: v.z,
+            })
+            .collect();
+
+        // Convert elements
+        let elements: Vec<SerializableElement> = self
+            .elements
+            .iter()
+            .map(|&elem| SerializableElement { nodes: elem })
+            .collect();
+
+        // Compute bounding box
+        let mut bbox_min = [f64::INFINITY; 3];
+        let mut bbox_max = [f64::NEG_INFINITY; 3];
+
+        for node in &self.nodes {
+            bbox_min[0] = bbox_min[0].min(node.x);
+            bbox_min[1] = bbox_min[1].min(node.y);
+            bbox_min[2] = bbox_min[2].min(node.z);
+            bbox_max[0] = bbox_max[0].max(node.x);
+            bbox_max[1] = bbox_max[1].max(node.y);
+            bbox_max[2] = bbox_max[2].max(node.z);
+        }
+
+        let metadata = MeshMetadata {
+            num_nodes: self.nodes.len(),
+            num_elements: self.elements.len(),
+            num_dof: self.nodes.len() * 3,
+            bbox_min,
+            bbox_max,
+        };
+
+        SerializableMesh {
+            nodes,
+            elements,
+            element_heights: self.heights_per_element.clone(),
+            metadata,
+        }
+    }
+
+    /// Export mesh to JSON string for frontend visualization.
+    ///
+    /// # Returns
+    /// A JSON string representation of the mesh.
+    ///
+    /// # Example
+    /// ```
+    /// use fem3d_rust_2::{Cut, generate_element_heights, generate_bar_mesh_3d};
+    ///
+    /// let cuts = vec![Cut::new(0.1, 0.015)];
+    /// let heights = generate_element_heights(&cuts, 0.5, 0.024, 20);
+    /// let mesh = generate_bar_mesh_3d(0.5, 0.03, &heights, 20, 2, 2);
+    ///
+    /// let json = mesh.to_json().unwrap();
+    /// println!("{}", json);
+    /// ```
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        let serializable = self.to_serializable();
+        serde_json::to_string(&serializable)
+    }
+
+    /// Export mesh to pretty-printed JSON string for frontend visualization.
+    ///
+    /// # Returns
+    /// A pretty-printed JSON string representation of the mesh.
+    ///
+    /// # Example
+    /// ```
+    /// use fem3d_rust_2::{Cut, generate_element_heights, generate_bar_mesh_3d};
+    ///
+    /// let cuts = vec![Cut::new(0.1, 0.015)];
+    /// let heights = generate_element_heights(&cuts, 0.5, 0.024, 20);
+    /// let mesh = generate_bar_mesh_3d(0.5, 0.03, &heights, 20, 2, 2);
+    ///
+    /// let json = mesh.to_json_pretty().unwrap();
+    /// println!("{}", json);
+    /// ```
+    pub fn to_json_pretty(&self) -> Result<String, serde_json::Error> {
+        let serializable = self.to_serializable();
+        serde_json::to_string_pretty(&serializable)
+    }
 }
 
 /// Generate uniform 3D mesh following the Python reference.
@@ -2183,5 +2336,90 @@ mod tests {
             .fold(f64::NEG_INFINITY, f64::max);
 
         assert!(min_h < max_h, "Adaptive mesh should have varying heights");
+    }
+
+    #[test]
+    fn mesh_serialization_to_json() {
+        let cuts = [Cut::new(0.1, 0.015)];
+        let length = 0.5;
+        let width = 0.03;
+        let h0 = 0.024;
+        let num_elements = 10;
+
+        let heights = generate_element_heights(&cuts, length, h0, num_elements);
+        let mesh = generate_bar_mesh_3d(length, width, &heights, num_elements, 2, 2);
+
+        // Test serialization
+        let serializable = mesh.to_serializable();
+        assert_eq!(serializable.nodes.len(), mesh.nodes.len());
+        assert_eq!(serializable.elements.len(), mesh.elements.len());
+        assert_eq!(serializable.element_heights.len(), mesh.heights_per_element.len());
+
+        // Verify metadata
+        assert_eq!(serializable.metadata.num_nodes, mesh.nodes.len());
+        assert_eq!(serializable.metadata.num_elements, mesh.elements.len());
+        assert_eq!(serializable.metadata.num_dof, mesh.nodes.len() * 3);
+
+        // Test JSON conversion
+        let json = mesh.to_json().unwrap();
+        assert!(json.contains("nodes"));
+        assert!(json.contains("elements"));
+        assert!(json.contains("metadata"));
+
+        // Verify it can be deserialized
+        let deserialized: SerializableMesh = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.nodes.len(), mesh.nodes.len());
+    }
+
+    #[test]
+    fn mesh_serialization_preserves_node_coordinates() {
+        let cuts = [Cut::new(0.08, 0.012)];
+        let heights = generate_element_heights(&cuts, 0.3, 0.024, 8);
+        let mesh = generate_bar_mesh_3d(0.3, 0.025, &heights, 8, 2, 2);
+
+        let serializable = mesh.to_serializable();
+
+        // Check that node coordinates are preserved
+        for (i, (original, serialized)) in mesh.nodes.iter().zip(serializable.nodes.iter()).enumerate() {
+            assert!(
+                (original.x - serialized.x).abs() < 1e-10,
+                "Node {} x coordinate mismatch",
+                i
+            );
+            assert!(
+                (original.y - serialized.y).abs() < 1e-10,
+                "Node {} y coordinate mismatch",
+                i
+            );
+            assert!(
+                (original.z - serialized.z).abs() < 1e-10,
+                "Node {} z coordinate mismatch",
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn mesh_serialization_bounding_box() {
+        let cuts = [Cut::new(0.15, 0.018)];
+        let heights = generate_element_heights(&cuts, 0.5, 0.024, 15);
+        let mesh = generate_bar_mesh_3d(0.5, 0.03, &heights, 15, 2, 3);
+
+        let serializable = mesh.to_serializable();
+
+        // Bounding box should contain all nodes
+        for node in &serializable.nodes {
+            assert!(node.x >= serializable.metadata.bbox_min[0]);
+            assert!(node.y >= serializable.metadata.bbox_min[1]);
+            assert!(node.z >= serializable.metadata.bbox_min[2]);
+            assert!(node.x <= serializable.metadata.bbox_max[0]);
+            assert!(node.y <= serializable.metadata.bbox_max[1]);
+            assert!(node.z <= serializable.metadata.bbox_max[2]);
+        }
+
+        // Check bounding box makes sense
+        assert!(serializable.metadata.bbox_min[0] < serializable.metadata.bbox_max[0]);
+        assert!(serializable.metadata.bbox_min[1] < serializable.metadata.bbox_max[1]);
+        assert!(serializable.metadata.bbox_min[2] < serializable.metadata.bbox_max[2]);
     }
 }
