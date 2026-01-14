@@ -12,3 +12,16 @@ You should use existing Rust crates as much as possible, such as nalgebra + nalg
 
 If you get stuck, there are some thoughts on implementation in /reference/thoughts/ - however only use these if the Python code is not understood.
 
+## Build & Test
+
+Compile the library:
+
+```
+cargo build
+```
+
+Run the full test suite (unit + integration):
+
+```
+cargo test
+```

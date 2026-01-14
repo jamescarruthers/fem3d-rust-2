@@ -15,7 +15,7 @@ const Z_DIR_INDEX: usize = 2;
 // f64 representation of 1/sqrt(3) Gauss point coordinate for 2×2×2 quadrature
 const GAUSS_G: f64 = 0.577_350_269_189_625_8;
 const MIN_DET_J: f64 = 1e-12;
-const LAMBDA_TOL: f64 = 1e-12;
+pub const LAMBDA_TOL: f64 = 1e-12;
 
 /// Mode classification following Soares top-corner displacement method
 /// (see reference/details.md section 12).
