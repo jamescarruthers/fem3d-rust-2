@@ -12,6 +12,7 @@ const DOF_PER_NODE: usize = 3;
 const DEFAULT_CORNER_TOL: f64 = 1e-6;
 const Z_DIR_INDEX: usize = 2;
 const GAUSS_G: f64 = 0.577_350_269_189_625_8;
+const MIN_DET_J: f64 = 1e-12;
 
 /// Mode classification following Soares top-corner displacement method
 /// (see reference/details.md section 12).
@@ -135,7 +136,7 @@ pub fn compute_hex8_matrices(
 
         let j: Matrix3<f64> = d_n_nat * node_coords;
         let det_j = j.determinant();
-        if det_j <= f64::EPSILON {
+        if det_j <= MIN_DET_J {
             continue;
         }
         let Some(j_inv) = j.try_inverse() else {
