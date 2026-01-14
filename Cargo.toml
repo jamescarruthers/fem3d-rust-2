@@ -6,6 +6,11 @@ edition = "2024"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["sprs-backend"]
+sprs-backend = ["sprs"]
+
 [dependencies]
 nalgebra = "0.33"
 nalgebra-sparse = "0.10"
+sprs = { version = "0.11", optional = true }
