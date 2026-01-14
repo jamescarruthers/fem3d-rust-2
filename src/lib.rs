@@ -682,7 +682,7 @@ pub fn lanczos_shift_invert(
     let mut t_mat = DMatrix::zeros(m_lanczos, m_lanczos);
     for i in 0..m_lanczos {
         t_mat[(i, i)] = alpha[i];
-        if i < beta.len() {
+        if i < beta.len() && i + 1 < m_lanczos {
             t_mat[(i, i + 1)] = beta[i];
             t_mat[(i + 1, i)] = beta[i];
         }
@@ -984,7 +984,7 @@ pub fn lanczos_shift_invert_sprs(
     let mut t_mat = DMatrix::zeros(m_lanczos, m_lanczos);
     for i in 0..m_lanczos {
         t_mat[(i, i)] = alpha[i];
-        if i < beta.len() {
+        if i < beta.len() && i + 1 < m_lanczos {
             t_mat[(i, i + 1)] = beta[i];
             t_mat[(i + 1, i)] = beta[i];
         }
