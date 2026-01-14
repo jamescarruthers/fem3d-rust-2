@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use nalgebra::linalg::SymmetricEigen;
 use nalgebra::{DMatrix, Matrix3, SMatrix, SVector, Vector3};
 use nalgebra_sparse::{CooMatrix, CsrMatrix};
 
@@ -14,6 +15,7 @@ const Z_DIR_INDEX: usize = 2;
 // f64 representation of 1/sqrt(3) Gauss point coordinate for 2×2×2 quadrature
 const GAUSS_G: f64 = 0.577_350_269_189_625_8;
 const MIN_DET_J: f64 = 1e-12;
+const LAMBDA_TOL: f64 = 1e-12;
 
 /// Mode classification following Soares top-corner displacement method
 /// (see reference/details.md section 12).
@@ -215,6 +217,34 @@ pub fn assemble_global_sparse(
     CsrMatrix::from(&coo)
 }
 
+/// Dense assembly variant used for small test problems.
+pub fn assemble_global_dense(
+    num_dofs: usize,
+    elements: &[[usize; 8]],
+    element_matrices: &[SMatrix<f64, 24, 24>],
+) -> DMatrix<f64> {
+    let mut mat = DMatrix::<f64>::zeros(num_dofs, num_dofs);
+
+    for (elem_idx, nodes) in elements.iter().enumerate() {
+        let dof_map: Vec<usize> = nodes
+            .iter()
+            .flat_map(|n| [3 * n, 3 * n + 1, 3 * n + 2])
+            .collect();
+        let local = &element_matrices[elem_idx];
+
+        for i in 0..24 {
+            for j in 0..24 {
+                let val = local[(i, j)];
+                if val.abs() > f64::EPSILON {
+                    mat[(dof_map[i], dof_map[j])] += val;
+                }
+            }
+        }
+    }
+
+    mat
+}
+
 /// Mesh representation for the 3D bar.
 #[derive(Debug, Clone)]
 pub struct Mesh3d {
@@ -374,6 +404,74 @@ pub fn generate_bar_mesh_3d_adaptive(
         elements,
         heights_per_element: heights,
     }
+}
+
+/// Build dense global stiffness and mass matrices for a mesh (intended for small test cases).
+pub fn compute_global_matrices_dense(
+    mesh: &Mesh3d,
+    e: f64,
+    nu: f64,
+    rho: f64,
+) -> (DMatrix<f64>, DMatrix<f64>) {
+    let mut ke_list = Vec::with_capacity(mesh.elements.len());
+    let mut me_list = Vec::with_capacity(mesh.elements.len());
+
+    for nodes in &mesh.elements {
+        let mut coords = NodeCoords::zeros();
+        for (i, node_idx) in nodes.iter().copied().enumerate() {
+            assert!(
+                node_idx < mesh.nodes.len(),
+                "element references invalid node index"
+            );
+            let node = mesh.nodes[node_idx];
+            coords[(i, 0)] = node.x;
+            coords[(i, 1)] = node.y;
+            coords[(i, 2)] = node.z;
+        }
+        let (ke, me) = compute_hex8_matrices(&coords, e, nu, rho);
+        ke_list.push(ke);
+        me_list.push(me);
+    }
+
+    let num_dofs = mesh.nodes.len() * DOF_PER_NODE;
+    (
+        assemble_global_dense(num_dofs, &mesh.elements, &ke_list),
+        assemble_global_dense(num_dofs, &mesh.elements, &me_list),
+    )
+}
+
+/// Compute modal frequencies (Hz) for a small mesh using dense generalized eigenvalue solve.
+///
+/// Returns an empty vector if the mass matrix is not positive definite.
+pub fn compute_modal_frequencies(
+    mesh: &Mesh3d,
+    e: f64,
+    nu: f64,
+    rho: f64,
+    num_modes: usize,
+) -> Vec<f64> {
+    let (k, m) = compute_global_matrices_dense(mesh, e, nu, rho);
+    let Some(chol) = m.cholesky() else {
+        return Vec::new();
+    };
+    let Some(l_inv) = chol.l().try_inverse() else {
+        return Vec::new();
+    };
+    // Dense transform is acceptable here because this helper targets small test meshes.
+    let a = l_inv.transpose() * k * l_inv;
+
+    let eig = SymmetricEigen::new(a);
+    let mut freqs: Vec<f64> = eig
+        .eigenvalues
+        .iter()
+        .copied()
+        .filter(|lambda| *lambda > LAMBDA_TOL)
+        .map(|lambda| lambda.sqrt() / (2.0 * std::f64::consts::PI))
+        .collect();
+
+    freqs.sort_by(|a, b| a.total_cmp(b));
+    freqs.truncate(num_modes.min(freqs.len()));
+    freqs
 }
 
 /// Find the two corner nodes at the x=0 end on the top surface (max z) with max/min y.
@@ -636,6 +734,22 @@ mod tests {
         assert_eq!(csr.nrows(), 24);
         assert_eq!(csr.ncols(), 24);
         assert_eq!(csr.nnz(), 24);
+    }
+
+    #[test]
+    fn dense_modal_analysis_returns_positive_frequencies() {
+        let heights = [0.02];
+        let mesh = generate_bar_mesh_3d(0.1, 0.02, &heights, 1, 1, 1);
+
+        let freqs = compute_modal_frequencies(&mesh, 70e9, 0.33, 2700.0, 4);
+        assert!(!freqs.is_empty());
+        for pair in freqs.windows(2) {
+            assert!(pair[0] <= pair[1] + LAMBDA_TOL);
+        }
+        for f in freqs {
+            assert!(f.is_finite());
+            assert!(f > 0.0);
+        }
     }
 
     #[test]
