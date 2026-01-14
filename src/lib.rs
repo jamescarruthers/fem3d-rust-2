@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use nalgebra::{
-    Matrix3, SMatrix, SVector, Vector3,
-};
+use nalgebra::{Matrix3, SMatrix, SVector, Vector3};
 use nalgebra_sparse::{CooMatrix, CsrMatrix};
 
 type NodeCoords = SMatrix<f64, 8, 3>;
@@ -123,7 +121,7 @@ pub fn compute_hex8_matrices(
 
         let j: Matrix3<f64> = d_n_nat * node_coords;
         let det_j = j.determinant();
-        if det_j <= 0.0 {
+        if det_j.abs() <= f64::EPSILON {
             continue;
         }
         let Some(j_inv) = j.try_inverse() else {
@@ -131,6 +129,7 @@ pub fn compute_hex8_matrices(
         };
 
         let d_n_phys = j_inv * d_n_nat;
+        let weight = w * det_j.abs();
 
         let mut b = Matrix6x24::zeros();
         for i in 0..8 {
@@ -151,7 +150,7 @@ pub fn compute_hex8_matrices(
             b[(5, col + 2)] = dndx;
         }
 
-        ke += w * det_j * (b.transpose() * d * b);
+        ke += weight * (b.transpose() * d * b);
 
         let mut n_mat = Matrix3x24::zeros();
         for i in 0..8 {
@@ -162,7 +161,7 @@ pub fn compute_hex8_matrices(
             n_mat[(2, col + 2)] = val;
         }
 
-        me += (w * det_j * rho) * (n_mat.transpose() * n_mat);
+        me += (weight * rho) * (n_mat.transpose() * n_mat);
     }
 
     ke = 0.5 * (ke + ke.transpose());
@@ -189,7 +188,7 @@ pub fn assemble_global_sparse(
         for i in 0..24 {
             for j in 0..24 {
                 let val = local[(i, j)];
-                if val != 0.0 {
+                if val.abs() > f64::EPSILON {
                     coo.push(dof_map[i], dof_map[j], val);
                 }
             }
@@ -216,16 +215,12 @@ pub fn generate_bar_mesh_3d(
     ny: usize,
     nz: usize,
 ) -> Mesh3d {
-    assert_eq!(
-        nx,
-        element_heights.len(),
-        "nx must match element_heights length"
-    );
-    let nx = element_heights.len();
-    let dx = length / nx as f64;
+    let expected_nx = element_heights.len();
+    assert_eq!(nx, expected_nx, "nx must match element_heights length");
+    let dx = length / expected_nx as f64;
     let dy = width / ny as f64;
 
-    let nnx = nx + 1;
+    let nnx = expected_nx + 1;
     let nny = ny + 1;
     let nnz = nz + 1;
 
@@ -236,7 +231,7 @@ pub fn generate_bar_mesh_3d(
         let x = ix as f64 * dx;
         let h = if ix == 0 {
             element_heights[0]
-        } else if ix == nx {
+        } else if ix == expected_nx {
             element_heights[element_heights.len() - 1]
         } else {
             (element_heights[ix - 1] + element_heights[ix]) / 2.0
@@ -257,7 +252,7 @@ pub fn generate_bar_mesh_3d(
     let mut elements = Vec::with_capacity(nx * ny * nz);
     let mut heights = Vec::with_capacity(nx * ny * nz);
 
-    for ix in 0..nx {
+    for ix in 0..expected_nx {
         let h = element_heights[ix];
         for iy in 0..ny {
             for iz in 0..nz {
@@ -297,6 +292,13 @@ pub fn generate_bar_mesh_3d_adaptive(
         x_positions.len(),
         nx + 1,
         "x_positions must have length len(element_heights)+1"
+    );
+    let end = *x_positions
+        .last()
+        .expect("x_positions must contain at least one position");
+    assert!(
+        (end - length).abs() < 1e-9,
+        "x_positions must span the provided length"
     );
 
     let dy = width / ny as f64;
@@ -350,8 +352,6 @@ pub fn generate_bar_mesh_3d_adaptive(
         }
     }
 
-    let _ = length; // length kept for parity with Python signature
-
     Mesh3d {
         nodes,
         elements,
@@ -372,15 +372,17 @@ mod tests {
 
     #[test]
     fn stiffness_and_mass_are_symmetric() {
+        use nalgebra::RowVector3;
+
         let coords = NodeCoords::from_rows(&[
-            Vector3::new(0.0, 0.0, 0.0).transpose(),
-            Vector3::new(1.0, 0.0, 0.0).transpose(),
-            Vector3::new(1.0, 1.0, 0.0).transpose(),
-            Vector3::new(0.0, 1.0, 0.0).transpose(),
-            Vector3::new(0.0, 0.0, 1.0).transpose(),
-            Vector3::new(1.0, 0.0, 1.0).transpose(),
-            Vector3::new(1.0, 1.0, 1.0).transpose(),
-            Vector3::new(0.0, 1.0, 1.0).transpose(),
+            RowVector3::new(0.0, 0.0, 0.0),
+            RowVector3::new(1.0, 0.0, 0.0),
+            RowVector3::new(1.0, 1.0, 0.0),
+            RowVector3::new(0.0, 1.0, 0.0),
+            RowVector3::new(0.0, 0.0, 1.0),
+            RowVector3::new(1.0, 0.0, 1.0),
+            RowVector3::new(1.0, 1.0, 1.0),
+            RowVector3::new(0.0, 1.0, 1.0),
         ]);
         let (ke, me) = compute_hex8_matrices(&coords, 200e9, 0.3, 7800.0);
 
