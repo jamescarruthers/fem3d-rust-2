@@ -1,30 +1,30 @@
-FEM Implementation Technical Overview
-1. Element Type: 8-Node Hexahedral (Hex8)
-Characteristics:
+# FEM Implementation Technical Specification
 
-3D brick element with 8 corner nodes
-Trilinear shape functions (linear in each direction)
-3 DOF per node (ux, uy, uz) = 24 DOF per element
-Full integration: 2×2×2 Gauss quadrature (8 integration points)
-2. Node Numbering Convention
+Complete specification for reimplementing the 3D FEM analysis for undercut percussion bar vibration.
+
+## 1. Element Type: 8-Node Hexahedral (Hex8)
+
+- 3D brick element with 8 corner nodes
+- Trilinear shape functions
+- 3 DOF per node (ux, uy, uz) = 24 DOF per element
+- Full integration: 2×2×2 Gauss quadrature (8 points)
+
+## 2. Node Numbering Convention
+
 Natural coordinates (ξ, η, ζ) range from -1 to +1:
 
-
+```
 Node 0: (-1, -1, -1)    Node 4: (-1, -1, +1)
 Node 1: (+1, -1, -1)    Node 5: (+1, -1, +1)
 Node 2: (+1, +1, -1)    Node 6: (+1, +1, +1)
 Node 3: (-1, +1, -1)    Node 7: (-1, +1, +1)
-Physical orientation:
+```
 
-X = length (along bar)
-Y = width
-Z = height/thickness
-3. Shape Functions
+Physical axes: X=length, Y=width, Z=height
 
-N[i] = (1/8) × (1 ± ξ) × (1 ± η) × (1 ± ζ)
-Explicitly:
+## 3. Shape Functions
 
-
+```
 N0 = 0.125 × (1-ξ)(1-η)(1-ζ)
 N1 = 0.125 × (1+ξ)(1-η)(1-ζ)
 N2 = 0.125 × (1+ξ)(1+η)(1-ζ)
@@ -33,145 +33,169 @@ N4 = 0.125 × (1-ξ)(1-η)(1+ζ)
 N5 = 0.125 × (1+ξ)(1-η)(1+ζ)
 N6 = 0.125 × (1+ξ)(1+η)(1+ζ)
 N7 = 0.125 × (1-ξ)(1+η)(1+ζ)
-4. Shape Function Derivatives
-∂N/∂ξ, ∂N/∂η, ∂N/∂ζ follow the pattern with appropriate sign changes. For example:
+```
 
+## 4. Shape Function Derivatives
 
-∂N0/∂ξ  = -0.125 × (1-η)(1-ζ)
-∂N0/∂η  = -0.125 × (1-ξ)(1-ζ)
-∂N0/∂ζ  = -0.125 × (1-ξ)(1-η)
-5. Gauss Quadrature (2×2×2)
-Points: g = 1/√3 ≈ 0.577350269
+∂N/∂ξ:
+```
+∂N0/∂ξ = -0.125(1-η)(1-ζ)    ∂N4/∂ξ = -0.125(1-η)(1+ζ)
+∂N1/∂ξ = +0.125(1-η)(1-ζ)    ∂N5/∂ξ = +0.125(1-η)(1+ζ)
+∂N2/∂ξ = +0.125(1+η)(1-ζ)    ∂N6/∂ξ = +0.125(1+η)(1+ζ)
+∂N3/∂ξ = -0.125(1+η)(1-ζ)    ∂N7/∂ξ = -0.125(1+η)(1+ζ)
+```
 
+∂N/∂η:
+```
+∂N0/∂η = -0.125(1-ξ)(1-ζ)    ∂N4/∂η = -0.125(1-ξ)(1+ζ)
+∂N1/∂η = -0.125(1+ξ)(1-ζ)    ∂N5/∂η = -0.125(1+ξ)(1+ζ)
+∂N2/∂η = +0.125(1+ξ)(1-ζ)    ∂N6/∂η = +0.125(1+ξ)(1+ζ)
+∂N3/∂η = +0.125(1-ξ)(1-ζ)    ∂N7/∂η = +0.125(1-ξ)(1+ζ)
+```
 
-Point 0: (-g, -g, -g)    Point 4: (-g, -g, +g)
-Point 1: (+g, -g, -g)    Point 5: (+g, -g, +g)
-Point 2: (+g, +g, -g)    Point 6: (+g, +g, +g)
-Point 3: (-g, +g, -g)    Point 7: (-g, +g, +g)
-Weights: All 8 weights = 1.0
+∂N/∂ζ:
+```
+∂N0/∂ζ = -0.125(1-ξ)(1-η)    ∂N4/∂ζ = +0.125(1-ξ)(1-η)
+∂N1/∂ζ = -0.125(1+ξ)(1-η)    ∂N5/∂ζ = +0.125(1+ξ)(1-η)
+∂N2/∂ζ = -0.125(1+ξ)(1+η)    ∂N6/∂ζ = +0.125(1+ξ)(1+η)
+∂N3/∂ζ = -0.125(1-ξ)(1+η)    ∂N7/∂ζ = +0.125(1-ξ)(1+η)
+```
 
-6. Jacobian Computation
+## 5. Gauss Quadrature (2×2×2)
 
-J = [∂N/∂ξ; ∂N/∂η; ∂N/∂ζ] × [node_coordinates]  (3×3 matrix)
-detJ = determinant(J)
-J_inv = inverse(J)
-Physical derivatives:
+g = 1/√3 ≈ 0.577350269
 
+```
+Point 0: (-g,-g,-g)  w=1    Point 4: (-g,-g,+g)  w=1
+Point 1: (+g,-g,-g)  w=1    Point 5: (+g,-g,+g)  w=1
+Point 2: (+g,+g,-g)  w=1    Point 6: (+g,+g,+g)  w=1
+Point 3: (-g,+g,-g)  w=1    Point 7: (-g,+g,+g)  w=1
+```
 
-[∂N/∂x; ∂N/∂y; ∂N/∂z] = J_inv × [∂N/∂ξ; ∂N/∂η; ∂N/∂ζ]
-7. Strain-Displacement Matrix B (6×24)
-Voigt notation strain order: [εxx, εyy, εzz, γxy, γyz, γxz]
+## 6. Jacobian
 
-For each node i (column offset = 3×i):
+```
+J = dN_natural × node_coords    (3×3)
+detJ = det(J)
+dN_physical = inv(J) × dN_natural
+```
 
+## 7. Strain-Displacement Matrix B (6×24)
 
-B[0, col+0] = ∂Ni/∂x     (εxx = ∂u/∂x)
-B[1, col+1] = ∂Ni/∂y     (εyy = ∂v/∂y)
-B[2, col+2] = ∂Ni/∂z     (εzz = ∂w/∂z)
-B[3, col+0] = ∂Ni/∂y     (γxy = ∂u/∂y + ∂v/∂x)
-B[3, col+1] = ∂Ni/∂x
-B[4, col+1] = ∂Ni/∂z     (γyz = ∂v/∂z + ∂w/∂y)
-B[4, col+2] = ∂Ni/∂y
-B[5, col+0] = ∂Ni/∂z     (γxz = ∂u/∂z + ∂w/∂x)
-B[5, col+2] = ∂Ni/∂x
-8. Elasticity Matrix D (6×6) - Isotropic
+Strain order: [εxx, εyy, εzz, γxy, γyz, γxz]
 
+For node i (column = 3×i):
+```
+B[0, 3i+0] = ∂Ni/∂x     (εxx)
+B[1, 3i+1] = ∂Ni/∂y     (εyy)
+B[2, 3i+2] = ∂Ni/∂z     (εzz)
+B[3, 3i+0] = ∂Ni/∂y     (γxy)
+B[3, 3i+1] = ∂Ni/∂x
+B[4, 3i+1] = ∂Ni/∂z     (γyz)
+B[4, 3i+2] = ∂Ni/∂y
+B[5, 3i+0] = ∂Ni/∂z     (γxz)
+B[5, 3i+2] = ∂Ni/∂x
+```
+
+## 8. Elasticity Matrix D (6×6)
+
+```
 factor = E / ((1+ν)(1-2ν))
 
-D = factor × [
-  (1-ν)    ν       ν       0           0           0
-  ν        (1-ν)   ν       0           0           0
-  ν        ν       (1-ν)   0           0           0
-  0        0       0       (1-2ν)/2    0           0
-  0        0       0       0           (1-2ν)/2    0
-  0        0       0       0           0           (1-2ν)/2
-]
-9. Element Matrix Integration
+D = factor × | (1-ν)   ν      ν      0          0          0         |
+             |   ν   (1-ν)    ν      0          0          0         |
+             |   ν     ν    (1-ν)    0          0          0         |
+             |   0     0      0    (1-2ν)/2     0          0         |
+             |   0     0      0      0       (1-2ν)/2      0         |
+             |   0     0      0      0          0       (1-2ν)/2    |
+```
+
+## 9. Element Matrix Integration
+
 At each Gauss point:
-
-
+```
 Ke += weight × detJ × (Bᵀ × D × B)
 Me += weight × detJ × ρ × (Nmatᵀ × Nmat)
-Where Nmat (3×24) maps nodal displacements to physical displacement:
+```
 
+Nmat (3×24): `Nmat[0,3i]=Ni`, `Nmat[1,3i+1]=Ni`, `Nmat[2,3i+2]=Ni`
 
-Nmat[0, 3i]   = Ni    (ux interpolation)
-Nmat[1, 3i+1] = Ni    (uy interpolation)
-Nmat[2, 3i+2] = Ni    (uz interpolation)
-10. Global Assembly
-DOF mapping for element with nodes [n0, n1, ..., n7]:
+## 10. Global Assembly
 
+DOF mapping: `[3×n0, 3×n0+1, 3×n0+2, 3×n1, ...]`
 
-global_dof = [3×n0, 3×n0+1, 3×n0+2, 3×n1, 3×n1+1, 3×n1+2, ..., 3×n7+2]
-Assembly:
+```
+K_global[gi,gj] += Ke[i,j]
+M_global[gi,gj] += Me[i,j]
+```
 
-
-K_global[gi, gj] += Ke[i, j]
-M_global[gi, gj] += Me[i, j]
 Use sparse matrices when DOF > 1000.
 
-11. Eigenvalue Solution
-Problem: Kφ = λMφ (generalized eigenvalue)
+## 11. Eigenvalue Solution
 
-Method: Shift-invert with σ = 1.0
+Problem: Kφ = λMφ
 
+Shift-invert method (σ=1.0):
+```
+eigsh(K, M=M, sigma=1.0, which='LM')
+```
 
-eigenvalues, eigenvectors = eigsh(K, M=M, sigma=1.0, which='LM')
-Alternative (dense): Cholesky transformation
+Rigid body filtering: ω² > 100 rad²/s²
 
+Frequency: f = √λ / (2π) Hz
 
-M = LLᵀ
-K̃ = L⁻¹ K L⁻ᵀ
-Solve standard: K̃ψ = λψ
-Rigid body filtering: ω² > 100 rad²/s² threshold (filters 6 rigid body modes)
+## 12. Mode Classification (Soares Method)
 
-Frequency conversion:
+1. Find two corner nodes at x=0 (top surface, max/min y)
+2. Extract displacement ψ = [ψx, ψy, ψz] at each corner
+3. Find dominant direction at s1:
+   - Y dominant → lateral
+   - X dominant → axial
+   - Z dominant + same sign → vertical_bending
+   - Z dominant + opposite sign → torsional
 
+## 13. Mesh Generation
 
-f = √λ / (2π)  [Hz]
-12. Mode Classification (Soares Method)
-Find two corner nodes at x=0 end (top surface, max/min y)
-Extract displacement at each corner: ψ = [ψx, ψy, ψz]
-Find dominant direction at corner s1:
-Y dominant → lateral
-X dominant → axial
-Z dominant + same sign at both corners → vertical bending
-Z dominant + opposite sign → torsional
-13. Mesh Generation
-Uniform mesh:
-
-nx elements along length, ny along width, nz along height
-dx = L/nx, dy = W/ny
-dz varies per x-position based on undercut profile
-Node generation:
-
-
-for ix in 0..nx:
-    h = height at position ix
+```
+For ix in 0..nx:
+    h = element_heights[ix]
     dz = h / nz
-    for iy in 0..ny:
-        for iz in 0..nz:
+    For iy in 0..ny:
+        For iz in 0..nz:
             node = [ix×dx, iy×dy, iz×dz]
+```
+
 Element connectivity:
+```
+[n0,n1,n2,n3,n4,n5,n6,n7] at grid (ix,iy,iz)
+```
 
+## 14. 2D Timoshenko Beam (Fast)
 
-n0 = node_index(ix, iy, iz)
-n1 = node_index(ix+1, iy, iz)
-... (8 nodes per hex following the numbering convention)
-14. Key Constants
-Constant	Value	Description
-KAPPA	5/6	Timoshenko shear correction (2D only)
-Rigid body threshold	100 rad²/s²	Filter ω² below this
-Sparse threshold	1000 DOF	Switch to sparse matrices
-Shift σ	1.0	Eigenvalue shift-invert
-Mass regularization	1e-12	Added to M diagonal
-15. Typical Mesh Settings
-Your current configuration:
+DOFs: [w1, θ1, w2, θ2]
 
-NX = 120 elements along length
-NY = 2 elements along width
-NZ = 24 elements along thickness
-Total elements = 120 × 2 × 24 = 5,760
-Total nodes = 121 × 3 × 25 = 9,075
-Total DOF = 27,225
-This should give you everything needed to reimplement the 3D FEM in another language. The critical pieces are the shape functions, B matrix construction, and the eigenvalue solution approach.
+κ = 5/6 (shear correction)
+G = E/(2(1+ν))
+φ = 12EI/(κGA L²)
+
+## 15. Key Constants
+
+| Constant | Value |
+|----------|-------|
+| KAPPA | 5/6 |
+| Rigid body threshold (3D) | 100 rad²/s² |
+| Rigid body threshold (2D) | 1 rad²/s² |
+| Sparse threshold | 1000 DOF |
+| Shift σ | 1.0 |
+| Mass regularization | 1e-12 |
+
+## 16. Current Configuration
+
+```
+NUM_ELEMENTS_2D = 120
+NUM_ELEMENTS_3D_X = 120
+NY = 2
+NZ = 24
+```
+
+Total: 5,760 elements, 9,075 nodes, 27,225 DOF
