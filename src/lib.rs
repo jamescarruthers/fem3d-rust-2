@@ -11,6 +11,9 @@ type Matrix3x8 = SMatrix<f64, 3, 8>;
 const DOF_PER_NODE: usize = 3;
 const DEFAULT_CORNER_TOL: f64 = 1e-6;
 const Z_DIR_INDEX: usize = 2;
+// f64 representation of 1/sqrt(3) Gauss point coordinate for 2×2×2 quadrature
+const GAUSS_G: f64 = 0.577_350_269_189_625_8;
+const MIN_DET_J: f64 = 1e-12;
 
 /// Mode classification following Soares top-corner displacement method
 /// (see reference/details.md section 12).
@@ -25,16 +28,15 @@ pub enum ModeType {
 
 /// Return 2×2×2 Gauss points and weights.
 pub fn gauss_points_3d() -> ([Vector3<f64>; 8], SVector<f64, 8>) {
-    let g = 1.0 / 3.0_f64.sqrt();
     let points = [
-        Vector3::new(-g, -g, -g),
-        Vector3::new(g, -g, -g),
-        Vector3::new(g, g, -g),
-        Vector3::new(-g, g, -g),
-        Vector3::new(-g, -g, g),
-        Vector3::new(g, -g, g),
-        Vector3::new(g, g, g),
-        Vector3::new(-g, g, g),
+        Vector3::new(-GAUSS_G, -GAUSS_G, -GAUSS_G),
+        Vector3::new(GAUSS_G, -GAUSS_G, -GAUSS_G),
+        Vector3::new(GAUSS_G, GAUSS_G, -GAUSS_G),
+        Vector3::new(-GAUSS_G, GAUSS_G, -GAUSS_G),
+        Vector3::new(-GAUSS_G, -GAUSS_G, GAUSS_G),
+        Vector3::new(GAUSS_G, -GAUSS_G, GAUSS_G),
+        Vector3::new(GAUSS_G, GAUSS_G, GAUSS_G),
+        Vector3::new(-GAUSS_G, GAUSS_G, GAUSS_G),
     ];
     let weights = SVector::<f64, 8>::from_element(1.0);
     (points, weights)
@@ -135,7 +137,8 @@ pub fn compute_hex8_matrices(
 
         let j: Matrix3<f64> = d_n_nat * node_coords;
         let det_j = j.determinant();
-        if det_j.abs() <= f64::EPSILON {
+        let det_j_abs = det_j.abs();
+        if det_j <= 0.0 || det_j_abs <= MIN_DET_J {
             continue;
         }
         let Some(j_inv) = j.try_inverse() else {
@@ -143,7 +146,7 @@ pub fn compute_hex8_matrices(
         };
 
         let d_n_phys = j_inv * d_n_nat;
-        let weight = w * det_j.abs();
+        let weight = w * det_j_abs;
 
         let mut b = Matrix6x24::zeros();
         for i in 0..8 {
@@ -507,11 +510,83 @@ pub fn classify_all_modes(
 mod tests {
     use super::*;
 
+    const TEST_TOL: f64 = 1e-12;
+    const ELASTICITY_TOL: f64 = 1e-9;
+
     #[test]
     fn shape_functions_sum_to_one() {
         let n = shape_functions_hex8(0.2, -0.3, 0.1);
         let sum: f64 = n.iter().sum();
-        assert!((sum - 1.0).abs() < 1e-12);
+        assert!((sum - 1.0).abs() < TEST_TOL);
+    }
+
+    #[test]
+    fn gauss_points_match_reference() {
+        let (points, weights) = gauss_points_3d();
+        let expected = [
+            (-GAUSS_G, -GAUSS_G, -GAUSS_G),
+            (GAUSS_G, -GAUSS_G, -GAUSS_G),
+            (GAUSS_G, GAUSS_G, -GAUSS_G),
+            (-GAUSS_G, GAUSS_G, -GAUSS_G),
+            (-GAUSS_G, -GAUSS_G, GAUSS_G),
+            (GAUSS_G, -GAUSS_G, GAUSS_G),
+            (GAUSS_G, GAUSS_G, GAUSS_G),
+            (-GAUSS_G, GAUSS_G, GAUSS_G),
+        ];
+
+        for (p, (ex, ey, ez)) in points.iter().zip(expected.iter()) {
+            assert!((p.x - ex).abs() < TEST_TOL);
+            assert!((p.y - ey).abs() < TEST_TOL);
+            assert!((p.z - ez).abs() < TEST_TOL);
+        }
+        for w in weights.iter() {
+            assert!((*w - 1.0).abs() < TEST_TOL);
+        }
+    }
+
+    #[test]
+    fn shape_function_derivatives_match_reference() {
+        let (xi, eta, zeta) = (0.2, -0.4, 0.6);
+        let d = shape_function_derivatives_hex8(xi, eta, zeta);
+        // Expected derivatives from reference/details.md section 4 evaluated at (xi, eta, zeta) = (0.2, -0.4, 0.6)
+        let expected = Matrix3x8::from_row_slice(&[
+            -0.07, 0.07, 0.03, -0.03, -0.28, 0.28, 0.12, -0.12, // d/dxi
+            -0.04, -0.06, 0.06, 0.04, -0.16, -0.24, 0.24, 0.16, // d/deta
+            -0.14, -0.21, -0.09, -0.06, 0.14, 0.21, 0.09, 0.06, // d/dzeta
+        ]);
+
+        for i in 0..3 {
+            for j in 0..8 {
+                assert!((d[(i, j)] - expected[(i, j)]).abs() < TEST_TOL);
+            }
+        }
+    }
+
+    #[test]
+    fn elasticity_matrix_matches_reference_definition() {
+        let e_pa = 200e9;
+        let nu = 0.3;
+        let d = elasticity_matrix_3d(e_pa, nu);
+
+        let factor = e_pa / ((1.0 + nu) * (1.0 - 2.0 * nu));
+        let normal = factor * (1.0 - nu);
+        let coupling = factor * nu;
+        let shear = factor * (1.0 - 2.0 * nu) / 2.0;
+
+        assert!((d[(0, 0)] - normal).abs() < ELASTICITY_TOL);
+        assert!((d[(1, 1)] - normal).abs() < ELASTICITY_TOL);
+        assert!((d[(2, 2)] - normal).abs() < ELASTICITY_TOL);
+
+        assert!((d[(0, 1)] - coupling).abs() < ELASTICITY_TOL);
+        assert!((d[(1, 0)] - coupling).abs() < ELASTICITY_TOL);
+        assert!((d[(0, 2)] - coupling).abs() < ELASTICITY_TOL);
+        assert!((d[(2, 0)] - coupling).abs() < ELASTICITY_TOL);
+        assert!((d[(1, 2)] - coupling).abs() < ELASTICITY_TOL);
+        assert!((d[(2, 1)] - coupling).abs() < ELASTICITY_TOL);
+
+        assert!((d[(3, 3)] - shear).abs() < ELASTICITY_TOL);
+        assert!((d[(4, 4)] - shear).abs() < ELASTICITY_TOL);
+        assert!((d[(5, 5)] - shear).abs() < ELASTICITY_TOL);
     }
 
     #[test]
