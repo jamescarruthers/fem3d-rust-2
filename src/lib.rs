@@ -454,7 +454,7 @@ pub fn compute_modal_frequencies(
     let Some(chol) = m.cholesky() else {
         return Vec::new();
     };
-    let Some(l_inv) = chol.l().clone_owned().try_inverse() else {
+    let Some(l_inv) = chol.l().try_inverse() else {
         return Vec::new();
     };
     // Dense transform is acceptable here because this helper targets small test meshes.
@@ -469,7 +469,7 @@ pub fn compute_modal_frequencies(
         .map(|lambda| lambda.sqrt() / (2.0 * std::f64::consts::PI))
         .collect();
 
-    freqs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    freqs.sort_by(|a, b| a.total_cmp(b));
     freqs.truncate(num_modes.min(freqs.len()));
     freqs
 }
