@@ -143,7 +143,7 @@ pub fn compute_hex8_matrices(
         };
 
         let d_n_phys = j_inv * d_n_nat;
-        let weight = w * det_j.abs();
+        let weight = w * det_j;
 
         let mut b = Matrix6x24::zeros();
         for i in 0..8 {
@@ -512,6 +512,75 @@ mod tests {
         let n = shape_functions_hex8(0.2, -0.3, 0.1);
         let sum: f64 = n.iter().sum();
         assert!((sum - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn gauss_points_match_reference() {
+        let (points, weights) = gauss_points_3d();
+        let g = 1.0 / 3.0_f64.sqrt();
+        let expected = [
+            (-g, -g, -g),
+            (g, -g, -g),
+            (g, g, -g),
+            (-g, g, -g),
+            (-g, -g, g),
+            (g, -g, g),
+            (g, g, g),
+            (-g, g, g),
+        ];
+
+        for (p, (ex, ey, ez)) in points.iter().zip(expected.iter()) {
+            assert!((p.x - ex).abs() < 1e-12);
+            assert!((p.y - ey).abs() < 1e-12);
+            assert!((p.z - ez).abs() < 1e-12);
+        }
+        for w in weights.iter() {
+            assert!((*w - 1.0).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn shape_function_derivatives_match_reference() {
+        let (xi, eta, zeta) = (0.2, -0.4, 0.6);
+        let d = shape_function_derivatives_hex8(xi, eta, zeta);
+        let expected = Matrix3x8::from_row_slice(&[
+            -0.07, 0.07, 0.03, -0.03, -0.28, 0.28, 0.12, -0.12, // d/dxi
+            -0.04, -0.06, 0.06, 0.04, -0.16, -0.24, 0.24, 0.16, // d/deta
+            -0.14, -0.21, -0.09, -0.06, 0.14, 0.21, 0.09, 0.06, // d/dzeta
+        ]);
+
+        for i in 0..3 {
+            for j in 0..8 {
+                assert!((d[(i, j)] - expected[(i, j)]).abs() < 1e-12);
+            }
+        }
+    }
+
+    #[test]
+    fn elasticity_matrix_matches_reference_definition() {
+        let e = 200e9;
+        let nu = 0.3;
+        let d = elasticity_matrix_3d(e, nu);
+
+        let factor = e / ((1.0 + nu) * (1.0 - 2.0 * nu));
+        let normal = factor * (1.0 - nu);
+        let coupling = factor * nu;
+        let shear = factor * (1.0 - 2.0 * nu) / 2.0;
+
+        assert!((d[(0, 0)] - normal).abs() < 1e-9);
+        assert!((d[(1, 1)] - normal).abs() < 1e-9);
+        assert!((d[(2, 2)] - normal).abs() < 1e-9);
+
+        assert!((d[(0, 1)] - coupling).abs() < 1e-9);
+        assert!((d[(1, 0)] - coupling).abs() < 1e-9);
+        assert!((d[(0, 2)] - coupling).abs() < 1e-9);
+        assert!((d[(2, 0)] - coupling).abs() < 1e-9);
+        assert!((d[(1, 2)] - coupling).abs() < 1e-9);
+        assert!((d[(2, 1)] - coupling).abs() < 1e-9);
+
+        assert!((d[(3, 3)] - shear).abs() < 1e-9);
+        assert!((d[(4, 4)] - shear).abs() < 1e-9);
+        assert!((d[(5, 5)] - shear).abs() < 1e-9);
     }
 
     #[test]
