@@ -21,6 +21,7 @@ fn sapele_bar_modal_frequencies_are_positive_and_sorted() {
         DIVISIONS.2,
     );
     let freqs = compute_modal_frequencies(&mesh, YOUNG_SAPELE, POISSON_SAPELE, DENSITY_SAPELE, 4);
+    println!("Sapele bar frequencies (Hz): {:?}", freqs);
 
     assert!(!freqs.is_empty());
     for window in freqs.windows(2) {
