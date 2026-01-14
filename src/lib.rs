@@ -254,6 +254,155 @@ pub fn cuts_to_genes(cuts: &[Cut]) -> Vec<f64> {
     genes
 }
 
+/// Generate adaptive 1D mesh with refinement at cut boundaries.
+///
+/// Uses finer elements near discontinuities (cut boundaries) and coarser
+/// elements in uniform regions for better accuracy with fewer total elements.
+///
+/// # Arguments
+/// * `cuts` - Slice of cuts
+/// * `length` - Bar length (m)
+/// * `h0` - Original height (m)
+/// * `base_elements` - Number of elements if mesh were uniform
+/// * `refinement_factor` - How many times finer the mesh is at boundaries (default: 4)
+/// * `transition_width` - Width of transition zone as fraction of length (default: 0.02)
+///
+/// # Returns
+/// Tuple of (x_positions, element_heights):
+/// - x_positions: Vector of element boundary x-coordinates (length n+1)
+/// - element_heights: Height at each element (length n)
+pub fn generate_adaptive_mesh_1d(
+    cuts: &[Cut],
+    length: f64,
+    h0: f64,
+    base_elements: usize,
+    refinement_factor: usize,
+    transition_width: f64,
+) -> (Vec<f64>, Vec<f64>) {
+    let center_x = length / 2.0;
+
+    // Sort cuts by lambda descending
+    let mut sorted_cuts: Vec<Cut> = cuts.to_vec();
+    sorted_cuts.sort_by(|a, b| b.lambda.partial_cmp(&a.lambda).unwrap());
+
+    // Find all discontinuity positions
+    let mut discontinuities: Vec<f64> = Vec::new();
+    for cut in &sorted_cuts {
+        if cut.lambda <= 0.0 {
+            continue;
+        }
+        let left_boundary = center_x - cut.lambda;
+        let right_boundary = center_x + cut.lambda;
+        discontinuities.push(left_boundary);
+        discontinuities.push(right_boundary);
+    }
+    discontinuities.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+    // Define refinement zones around each discontinuity
+    let transition_dist = transition_width * length;
+
+    let is_near_discontinuity = |x: f64| -> bool {
+        discontinuities
+            .iter()
+            .any(|&disc| (x - disc).abs() < transition_dist)
+    };
+
+    // Generate adaptive element positions
+    let base_dx = length / base_elements as f64;
+    let fine_dx = base_dx / refinement_factor as f64;
+
+    let mut x_positions: Vec<f64> = vec![0.0];
+    let mut current_x = 0.0;
+
+    while current_x < length - 1e-10 {
+        // Determine element size based on proximity to discontinuity
+        let dx = if is_near_discontinuity(current_x)
+            || is_near_discontinuity(current_x + base_dx)
+        {
+            fine_dx
+        } else {
+            base_dx
+        };
+
+        // Don't overshoot the bar length
+        let next_x = if current_x + dx > length {
+            length
+        } else {
+            current_x + dx
+        };
+
+        current_x = next_x;
+        x_positions.push(current_x);
+    }
+
+    // Ensure last position is exactly length
+    if let Some(last) = x_positions.last_mut() {
+        if (*last - length).abs() > 1e-10 {
+            *last = length;
+        }
+    }
+
+    // Generate heights for each element
+    let num_elements = x_positions.len() - 1;
+    let mut element_heights = Vec::with_capacity(num_elements);
+
+    // Build discontinuities with heights for interpolation
+    let mut disc_with_heights: Vec<(f64, f64, f64)> = Vec::new();
+    for cut in &sorted_cuts {
+        if cut.lambda <= 0.0 {
+            continue;
+        }
+
+        let left_boundary = center_x - cut.lambda;
+        let right_boundary = center_x + cut.lambda;
+
+        // At left boundary
+        let h_outside_left = compute_height(left_boundary - 0.0001, &sorted_cuts, length, h0);
+        let h_inside_left = compute_height(left_boundary + 0.0001, &sorted_cuts, length, h0);
+        if (h_outside_left - h_inside_left).abs() > 1e-9 {
+            disc_with_heights.push((left_boundary, h_outside_left, h_inside_left));
+        }
+
+        // At right boundary
+        let h_inside_right = compute_height(right_boundary - 0.0001, &sorted_cuts, length, h0);
+        let h_outside_right = compute_height(right_boundary + 0.0001, &sorted_cuts, length, h0);
+        if (h_inside_right - h_outside_right).abs() > 1e-9 {
+            disc_with_heights.push((right_boundary, h_inside_right, h_outside_right));
+        }
+    }
+    disc_with_heights.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+    for i in 0..num_elements {
+        let x_start = x_positions[i];
+        let x_end = x_positions[i + 1];
+        let x_mid = (x_start + x_end) / 2.0;
+
+        // Check if element contains a discontinuity
+        let mut found_discontinuity = false;
+        for &(disc_x, h_before, h_after) in &disc_with_heights {
+            if disc_x > x_start && disc_x < x_end {
+                // Element contains a discontinuity - use quadratic interpolation
+                let dx1 = disc_x - x_start;
+                let dx2 = x_end - disc_x;
+
+                // Quadratic weighting from Eq. 6
+                let height =
+                    ((h_before * h_before * dx1 + h_after * h_after * dx2) / (dx1 + dx2)).sqrt();
+                element_heights.push(height);
+                found_discontinuity = true;
+                break;
+            }
+        }
+
+        if !found_discontinuity {
+            // No discontinuity - use height at midpoint
+            element_heights.push(compute_height(x_mid, &sorted_cuts, length, h0));
+        }
+    }
+
+    (x_positions, element_heights)
+}
+
 /// Return 2×2×2 Gauss points and weights.
 pub fn gauss_points_3d() -> ([Vector3<f64>; 8], SVector<f64, 8>) {
     let points = [
@@ -1936,5 +2085,103 @@ mod tests {
         assert!(min_height < max_height, "Mesh should have varying heights from cuts");
         assert!(min_height >= 0.014, "Minimum height should be around cut height");
         assert!(max_height <= 0.025, "Maximum height should be around h0");
+    }
+
+    #[test]
+    fn adaptive_mesh_1d_has_variable_spacing() {
+        let cuts = [Cut::new(0.15, 0.015)];
+        let length = 0.5;
+        let h0 = 0.024;
+        let base_elements = 20;
+        let refinement_factor = 4;
+        let transition_width = 0.02;
+
+        let (x_positions, element_heights) = generate_adaptive_mesh_1d(
+            &cuts,
+            length,
+            h0,
+            base_elements,
+            refinement_factor,
+            transition_width,
+        );
+
+        // Should have more elements than base due to refinement
+        assert!(x_positions.len() > base_elements);
+        assert_eq!(element_heights.len(), x_positions.len() - 1);
+
+        // First and last positions should be 0 and length
+        assert!((x_positions[0] - 0.0).abs() < 1e-10);
+        assert!((x_positions[x_positions.len() - 1] - length).abs() < 1e-10);
+
+        // Check for variable element sizes
+        let mut element_sizes: Vec<f64> = Vec::new();
+        for i in 0..x_positions.len() - 1 {
+            element_sizes.push(x_positions[i + 1] - x_positions[i]);
+        }
+
+        let min_size = element_sizes
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, f64::min);
+        let max_size = element_sizes
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max);
+
+        // Should have varying element sizes due to refinement
+        assert!(
+            (max_size / min_size) > 2.0,
+            "Should have significant element size variation. Min: {:.6}, Max: {:.6}",
+            min_size,
+            max_size
+        );
+    }
+
+    #[test]
+    fn adaptive_mesh_1d_integrates_with_3d_mesh() {
+        let cuts = [
+            Cut::new(0.20, 0.020),
+            Cut::new(0.10, 0.015),
+        ];
+        let length = 0.5;
+        let width = 0.03;
+        let h0 = 0.024;
+        let base_elements = 15;
+
+        let (x_positions, element_heights) = generate_adaptive_mesh_1d(
+            &cuts,
+            length,
+            h0,
+            base_elements,
+            4,
+            0.02,
+        );
+
+        // Use adaptive mesh with generate_bar_mesh_3d_adaptive
+        let mesh = generate_bar_mesh_3d_adaptive(
+            length,
+            width,
+            &x_positions,
+            &element_heights,
+            2,
+            2,
+        );
+
+        // Mesh should be valid
+        assert!(mesh.nodes.len() > 0);
+        assert!(mesh.elements.len() > 0);
+        assert_eq!(mesh.heights_per_element.len(), mesh.elements.len());
+
+        // Heights should vary
+        let min_h = element_heights
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, f64::min);
+        let max_h = element_heights
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max);
+
+        assert!(min_h < max_h, "Adaptive mesh should have varying heights");
     }
 }

@@ -12,7 +12,8 @@
 
 use fem3d_rust_2::{
     compute_height, compute_modal_frequencies_with_solver, cuts_to_genes, genes_to_cuts,
-    generate_bar_mesh_3d, generate_element_heights, Cut, EigenSolver,
+    generate_adaptive_mesh_1d, generate_bar_mesh_3d, generate_bar_mesh_3d_adaptive,
+    generate_element_heights, Cut, EigenSolver,
 };
 
 fn main() {
@@ -204,6 +205,84 @@ fn main() {
             println!();
         }
     }
+
+    // Example 5: Adaptive mesh refinement
+    println!("\n\nExample 5: Adaptive mesh refinement");
+    println!("====================================");
+    
+    println!("Comparing uniform vs adaptive meshing:");
+    
+    // Uniform mesh
+    let uniform_heights = generate_element_heights(&cuts_nested, length, h0, 30);
+    println!("\nUniform mesh:");
+    println!("  Elements: {}", uniform_heights.len());
+    
+    // Adaptive mesh - refines near cut boundaries
+    let (x_positions, adaptive_heights) = generate_adaptive_mesh_1d(
+        &cuts_nested,
+        length,
+        h0,
+        30,     // base elements
+        4,      // refinement factor
+        0.02,   // transition width (2% of length)
+    );
+    
+    println!("\nAdaptive mesh:");
+    println!("  Elements: {}", adaptive_heights.len());
+    println!("  X positions: {} boundary points", x_positions.len());
+    
+    // Compute element sizes for adaptive mesh
+    let mut element_sizes: Vec<f64> = Vec::new();
+    for i in 0..x_positions.len() - 1 {
+        element_sizes.push((x_positions[i + 1] - x_positions[i]) * 1000.0);
+    }
+    
+    let min_size = element_sizes
+        .iter()
+        .cloned()
+        .fold(f64::INFINITY, f64::min);
+    let max_size = element_sizes
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
+    
+    println!("  Element size range: {:.2} - {:.2} mm", min_size, max_size);
+    println!("  Refinement ratio: {:.1}x", max_size / min_size);
+    
+    // Create 3D mesh with adaptive spacing
+    let adaptive_mesh = generate_bar_mesh_3d_adaptive(
+        length,
+        width,
+        &x_positions,
+        &adaptive_heights,
+        2,
+        2,
+    );
+    
+    println!("\nAdaptive 3D mesh:");
+    println!("  Elements: {}", adaptive_mesh.elements.len());
+    println!("  Nodes: {}", adaptive_mesh.nodes.len());
+    println!("  DOF: {}", adaptive_mesh.nodes.len() * 3);
+    
+    // Compute frequencies with adaptive mesh
+    let freqs_adaptive = compute_modal_frequencies_with_solver(
+        &adaptive_mesh,
+        e,
+        nu,
+        rho,
+        4,
+        EigenSolver::Auto,
+    );
+    
+    println!("\nModal frequencies (adaptive mesh):");
+    for (i, freq) in freqs_adaptive.iter().enumerate() {
+        println!("  Mode {}: {:.1} Hz", i + 1, freq);
+    }
+    
+    println!("\nBenefit of adaptive meshing:");
+    println!("  - Finer elements near cut boundaries capture discontinuities");
+    println!("  - Coarser elements in uniform regions reduce computational cost");
+    println!("  - Better accuracy per DOF compared to uniform mesh");
 
     println!("\n=== Example Complete ===");
 }
