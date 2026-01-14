@@ -26,6 +26,7 @@ pub const RIGID_BODY_LAMBDA_THRESHOLD: f64 = 100.0;
 /// Frequency threshold (Hz) to remove any residual near-rigid-body modes that survive the
 /// lambda cutoff on large DOF problems.
 pub const MIN_FREQUENCY_HZ: f64 = 5.0;
+const NUM_RIGID_BODY_MODES_3D: usize = 6;
 /// Default shift for shift-invert Lanczos (targets eigenvalues near this value).
 pub const DEFAULT_SHIFT: f64 = 1.0;
 /// DOF threshold above which sparse solver is used automatically.
@@ -1239,7 +1240,8 @@ pub fn compute_modal_frequencies_sparse(
     num_modes: usize,
 ) -> Vec<f64> {
     let (k, m) = compute_global_matrices_sparse(mesh, e, nu, rho);
-    let (eigenvalues, _) = lanczos_shift_invert(&k, &m, num_modes, DEFAULT_SHIFT);
+    let requested = num_modes + NUM_RIGID_BODY_MODES_3D;
+    let (eigenvalues, _) = lanczos_shift_invert(&k, &m, requested, DEFAULT_SHIFT);
 
     let freqs: Vec<f64> = eigenvalues
         .iter()
@@ -1537,7 +1539,8 @@ pub fn compute_modal_frequencies_sprs(
     num_modes: usize,
 ) -> Vec<f64> {
     let (k, m) = compute_global_matrices_sprs(mesh, e, nu, rho);
-    let (eigenvalues, _) = lanczos_shift_invert_sprs(&k, &m, num_modes, DEFAULT_SHIFT);
+    let requested = num_modes + NUM_RIGID_BODY_MODES_3D;
+    let (eigenvalues, _) = lanczos_shift_invert_sprs(&k, &m, requested, DEFAULT_SHIFT);
 
     let freqs: Vec<f64> = eigenvalues
         .iter()
@@ -1927,6 +1930,22 @@ mod tests {
             assert!(f.is_finite(), "Frequencies should be finite");
             assert!(*f > 0.0, "Frequencies should be positive");
         }
+    }
+
+    #[test]
+    fn sparse_solver_returns_requested_modes_after_filtering() {
+        let heights: Vec<f64> = vec![0.02; 8];
+        let mesh = generate_bar_mesh_3d(0.16, 0.02, &heights, 8, 2, 2);
+
+        let requested = 3;
+        let freqs = compute_modal_frequencies_sparse(&mesh, 70e9, 0.33, 2700.0, requested);
+
+        assert!(
+            freqs.len() >= requested,
+            "Expected at least {} modes after filtering rigid-body modes, got {}",
+            requested,
+            freqs.len()
+        );
     }
 
     #[test]
