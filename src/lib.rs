@@ -15,6 +15,7 @@ const Z_DIR_INDEX: usize = 2;
 // f64 representation of 1/sqrt(3) Gauss point coordinate for 2×2×2 quadrature
 const GAUSS_G: f64 = 0.577_350_269_189_625_8;
 const MIN_DET_J: f64 = 1e-12;
+const LAMBDA_TOL: f64 = 1e-12;
 
 /// Mode classification following Soares top-corner displacement method
 /// (see reference/details.md section 12).
@@ -436,6 +437,8 @@ pub fn compute_global_matrices_dense(
 }
 
 /// Compute modal frequencies (Hz) for a small mesh using dense generalized eigenvalue solve.
+///
+/// Returns an empty vector if the mass matrix is not positive definite.
 pub fn compute_modal_frequencies(
     mesh: &Mesh3d,
     e: f64,
@@ -455,11 +458,11 @@ pub fn compute_modal_frequencies(
         .eigenvalues
         .iter()
         .copied()
-        .filter(|lambda: &f64| *lambda > 1e-12)
+        .filter(|lambda| *lambda > LAMBDA_TOL)
         .map(|lambda| lambda.sqrt() / (2.0 * std::f64::consts::PI))
         .collect();
 
-    freqs.sort_by(|a: &f64, b: &f64| a.total_cmp(b));
+    freqs.sort_by(|a, b| a.total_cmp(b));
     freqs.truncate(num_modes.min(freqs.len()));
     freqs
 }
