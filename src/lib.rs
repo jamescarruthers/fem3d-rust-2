@@ -16,6 +16,7 @@ const Z_DIR_INDEX: usize = 2;
 const GAUSS_G: f64 = 0.577_350_269_189_625_8;
 const MIN_DET_J: f64 = 1e-12;
 pub const LAMBDA_TOL: f64 = 1e-12;
+/// Eigenvalue threshold used to discard rigid-body modes (matches Python reference).
 pub const RIGID_BODY_LAMBDA_THRESHOLD: f64 = 100.0;
 
 /// Mode classification following Soares top-corner displacement method
