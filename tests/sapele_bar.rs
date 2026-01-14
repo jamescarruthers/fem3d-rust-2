@@ -24,6 +24,7 @@ fn sapele_bar_modal_frequencies_are_positive_and_sorted() {
     println!("Sapele bar frequencies (Hz): {:?}", freqs);
 
     assert!(!freqs.is_empty());
+    assert!(freqs[0] > 1.0, "Rigid-body modes should be filtered out");
     for window in freqs.windows(2) {
         assert!(window[0] <= window[1] + LAMBDA_TOL);
     }
