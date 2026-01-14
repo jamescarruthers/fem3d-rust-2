@@ -454,9 +454,11 @@ pub fn compute_modal_frequencies(
     let Some(chol) = m.cholesky() else {
         return Vec::new();
     };
-    let m_inv = chol.inverse();
+    let Some(l_inv) = chol.l().clone_owned().try_inverse() else {
+        return Vec::new();
+    };
     // Dense transform is acceptable here because this helper targets small test meshes.
-    let a = m_inv.transpose() * k * m_inv;
+    let a = l_inv.transpose() * k * l_inv;
 
     let eig = SymmetricEigen::new(a);
     let mut freqs: Vec<f64> = eig
@@ -742,7 +744,7 @@ mod tests {
         let freqs = compute_modal_frequencies(&mesh, 70e9, 0.33, 2700.0, 4);
         assert!(!freqs.is_empty());
         for pair in freqs.windows(2) {
-            assert!(pair[0] <= pair[1] + 1e-12);
+            assert!(pair[0] <= pair[1] + LAMBDA_TOL);
         }
         for f in freqs {
             assert!(f.is_finite());
