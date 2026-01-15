@@ -1,6 +1,4 @@
-use fem3d_rust_2::{
-    compute_global_matrices_dense, generate_bar_mesh_3d, generate_bar_mesh_3d_adaptive, Material,
-};
+use fem3d_rust_2::{compute_global_matrices_dense, generate_bar_mesh_3d, Material};
 use nalgebra::{Matrix3, SMatrix};
 
 type Matrix3x8 = SMatrix<f64, 3, 8>;

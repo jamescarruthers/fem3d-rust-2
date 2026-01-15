@@ -11,10 +11,38 @@
 /// xylophones and marimbas.
 
 use fem3d_rust_2::{
-    compute_height, compute_modal_frequencies_with_solver, cuts_to_genes, genes_to_cuts,
-    generate_adaptive_mesh_1d, generate_bar_mesh_3d, generate_bar_mesh_3d_adaptive,
-    generate_element_heights, Cut, EigenSolver, Material,
+    classify_all_modes, compute_height, compute_modal_frequencies_with_shapes_solver,
+    cuts_to_genes, genes_to_cuts, generate_adaptive_mesh_1d, generate_bar_mesh_3d,
+    generate_bar_mesh_3d_adaptive, generate_element_heights, Cut, EigenSolver, Material, ModeType,
 };
+
+fn mode_type_prefix(mode_type: &ModeType) -> &'static str {
+    match mode_type {
+        ModeType::VerticalBending => "V",
+        ModeType::Torsional => "T",
+        ModeType::Lateral => "L",
+        ModeType::Axial => "A",
+        ModeType::Unknown => "?",
+    }
+}
+
+fn print_classified_modes(
+    freqs: &[f64],
+    mode_shapes: &nalgebra::DMatrix<f64>,
+    nodes: &[nalgebra::Vector3<f64>],
+) {
+    let classified = classify_all_modes(freqs, mode_shapes, nodes);
+    println!("\nClassified modes:");
+    for (mode_type, modes) in &classified {
+        if !modes.is_empty() {
+            let mode_strs: Vec<String> = modes
+                .iter()
+                .map(|(f, _, rank)| format!("{}{}: {:.1} Hz", mode_type_prefix(mode_type), rank, f))
+                .collect();
+            println!("  {:?}: {}", mode_type, mode_strs.join(", "));
+        }
+    }
+}
 
 fn main() {
     println!("=== Cut-Based Mesh Generation Example ===\n");
@@ -66,7 +94,7 @@ fn main() {
     println!("  Nodes: {}", mesh_simple.nodes.len());
     println!("  DOF: {}", mesh_simple.nodes.len() * 3);
 
-    let freqs_simple = compute_modal_frequencies_with_solver(
+    let (freqs_simple, shapes_simple) = compute_modal_frequencies_with_shapes_solver(
         &mesh_simple,
         sapele.e,
         sapele.nu,
@@ -78,6 +106,7 @@ fn main() {
     for (i, freq) in freqs_simple.iter().enumerate() {
         println!("  Mode {}: {:.1} Hz", i + 1, freq);
     }
+    print_classified_modes(&freqs_simple, &shapes_simple, &mesh_simple.nodes);
 
     // Example 2: Nested cuts (typical marimba bar)
     println!("\n\nExample 2: Nested cuts (marimba-style)");
@@ -120,7 +149,7 @@ fn main() {
     println!("  Nodes: {}", mesh_nested.nodes.len());
     println!("  DOF: {}", mesh_nested.nodes.len() * 3);
 
-    let freqs_nested = compute_modal_frequencies_with_solver(
+    let (freqs_nested, shapes_nested) = compute_modal_frequencies_with_shapes_solver(
         &mesh_nested,
         sapele.e,
         sapele.nu,
@@ -132,6 +161,7 @@ fn main() {
     for (i, freq) in freqs_nested.iter().enumerate() {
         println!("  Mode {}: {:.1} Hz", i + 1, freq);
     }
+    print_classified_modes(&freqs_nested, &shapes_nested, &mesh_nested.nodes);
 
     // Example 3: Demonstrating genes/cuts conversion
     println!("\n\nExample 3: Genes/Cuts conversion");
@@ -264,7 +294,7 @@ fn main() {
     println!("  DOF: {}", adaptive_mesh.nodes.len() * 3);
     
     // Compute frequencies with adaptive mesh
-    let freqs_adaptive = compute_modal_frequencies_with_solver(
+    let (freqs_adaptive, shapes_adaptive) = compute_modal_frequencies_with_shapes_solver(
         &adaptive_mesh,
         sapele.e,
         sapele.nu,
@@ -272,11 +302,12 @@ fn main() {
         4,
         EigenSolver::Auto,
     );
-    
+
     println!("\nModal frequencies (adaptive mesh):");
     for (i, freq) in freqs_adaptive.iter().enumerate() {
         println!("  Mode {}: {:.1} Hz", i + 1, freq);
     }
+    print_classified_modes(&freqs_adaptive, &shapes_adaptive, &adaptive_mesh.nodes);
     
     println!("\nBenefit of adaptive meshing:");
     println!("  - Finer elements near cut boundaries capture discontinuities");

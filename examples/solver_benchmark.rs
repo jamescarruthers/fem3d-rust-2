@@ -1,5 +1,6 @@
 use fem3d_rust_2::{
-    compute_modal_frequencies, compute_modal_frequencies_sparse, generate_bar_mesh_3d, Material,
+    classify_all_modes, compute_modal_frequencies_sparse_with_shapes,
+    compute_modal_frequencies_with_shapes, generate_bar_mesh_3d, Material, ModeType,
 };
 use std::time::Instant;
 
@@ -15,6 +16,7 @@ struct BenchResult {
     solver: String,
     time_ms: f64,
     freqs: Vec<f64>,
+    classified: Option<std::collections::HashMap<ModeType, Vec<(f64, usize, usize)>>>,
 }
 
 fn benchmark_dense(mesh: &fem3d_rust_2::Mesh3d, material: &Material) -> Option<BenchResult> {
@@ -26,26 +28,35 @@ fn benchmark_dense(mesh: &fem3d_rust_2::Mesh3d, material: &Material) -> Option<B
     }
 
     let start = Instant::now();
-    let freqs = compute_modal_frequencies(mesh, material.e, material.nu, material.rho, NUM_MODES);
+    let (freqs, mode_shapes) =
+        compute_modal_frequencies_with_shapes(mesh, material.e, material.nu, material.rho, NUM_MODES);
     let elapsed = start.elapsed();
+
+    // Classify modes using Soares method
+    let classified = classify_all_modes(&freqs, &mode_shapes, &mesh.nodes);
 
     Some(BenchResult {
         solver: "Dense".to_string(),
         time_ms: elapsed.as_secs_f64() * 1000.0,
         freqs,
+        classified: Some(classified),
     })
 }
 
 fn benchmark_sparse_nalgebra(mesh: &fem3d_rust_2::Mesh3d, material: &Material) -> BenchResult {
     let start = Instant::now();
-    let freqs =
-        compute_modal_frequencies_sparse(mesh, material.e, material.nu, material.rho, NUM_MODES);
+    let (freqs, mode_shapes) =
+        compute_modal_frequencies_sparse_with_shapes(mesh, material.e, material.nu, material.rho, NUM_MODES);
     let elapsed = start.elapsed();
+
+    // Classify modes using Soares method
+    let classified = classify_all_modes(&freqs, &mode_shapes, &mesh.nodes);
 
     BenchResult {
         solver: "Sparse (nalgebra)".to_string(),
         time_ms: elapsed.as_secs_f64() * 1000.0,
         freqs,
+        classified: Some(classified),
     }
 }
 
@@ -56,10 +67,12 @@ fn benchmark_sparse_sprs(mesh: &fem3d_rust_2::Mesh3d, material: &Material) -> Be
         compute_modal_frequencies_sprs(mesh, material.e, material.nu, material.rho, NUM_MODES);
     let elapsed = start.elapsed();
 
+    // sprs backend doesn't support mode shapes yet, so no classification
     BenchResult {
         solver: "Sparse (sprs)".to_string(),
         time_ms: elapsed.as_secs_f64() * 1000.0,
         freqs,
+        classified: None,
     }
 }
 
@@ -67,6 +80,16 @@ fn format_freq(f: Option<&f64>) -> String {
     match f {
         Some(freq) => format!("{:.1}", freq),
         None => "-".to_string(),
+    }
+}
+
+fn mode_type_prefix(mode_type: &ModeType) -> &'static str {
+    match mode_type {
+        ModeType::VerticalBending => "V",
+        ModeType::Torsional => "T",
+        ModeType::Lateral => "L",
+        ModeType::Axial => "A",
+        ModeType::Unknown => "?",
     }
 }
 
@@ -150,11 +173,31 @@ fn main() {
     println!("└─────────────────────────────────────────────────────────────────────────────────────────────────┘");
     println!();
 
+    // Mode classification example
+    println!("Mode Classification Example (Soares Method):");
+    println!("─────────────────────────────────────────────");
+    let heights: Vec<f64> = vec![THICKNESS_M; 10];
+    let mesh = generate_bar_mesh_3d(LENGTH_M, WIDTH_M, &heights, 10, 2, 3);
+    let result = benchmark_sparse_nalgebra(&mesh, &sapele);
+    if let Some(classified) = &result.classified {
+        for (mode_type, modes) in classified {
+            if !modes.is_empty() {
+                let freqs: Vec<String> = modes
+                    .iter()
+                    .map(|(f, _, rank)| format!("{}{}: {:.1} Hz", mode_type_prefix(mode_type), rank, f))
+                    .collect();
+                println!("  {:?}: {}", mode_type, freqs.join(", "));
+            }
+        }
+    }
+    println!();
+
     // Summary
     println!("Notes:");
     println!("  - Dense solver skipped for DOF > 2000 (would take too long)");
     println!("  - Sparse solvers use shift-invert Lanczos algorithm");
     println!("  - Times include matrix assembly and eigenvalue computation");
+    println!("  - Mode classification uses Soares' corner displacement method");
     println!("  - Analytical first bending mode (Euler-Bernoulli): ~352 Hz");
     println!();
 
