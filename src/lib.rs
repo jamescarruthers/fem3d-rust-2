@@ -27,7 +27,9 @@ pub const RIGID_BODY_LAMBDA_THRESHOLD: f64 = 100.0;
 /// lambda cutoff on large DOF problems.
 pub const MIN_FREQUENCY_HZ: f64 = 5.0;
 /// Default shift for shift-invert Lanczos (targets eigenvalues near this value).
-pub const DEFAULT_SHIFT: f64 = 1.0;
+/// Set to RIGID_BODY_LAMBDA_THRESHOLD so we target the lowest elastic modes
+/// rather than rigid body modes (which have λ ≈ 0).
+pub const DEFAULT_SHIFT: f64 = RIGID_BODY_LAMBDA_THRESHOLD;
 /// DOF threshold above which sparse solver is used automatically.
 pub const SPARSE_DOF_THRESHOLD: usize = 500;
 /// Maximum Lanczos iterations.
@@ -1095,20 +1097,25 @@ pub fn lanczos_shift_invert(
     let num_lanczos = (num_modes + 10).min(n - 1).min(MAX_LANCZOS_ITER);
 
     // Build and factor the shifted matrix A = K - sigma * M
+    // Use LU decomposition since the shifted matrix may be indefinite
+    // (rigid body modes have λ ≈ 0, so K - σM has negative eigenvalues for σ > 0)
     let a_shifted = build_shifted_matrix_dense(k, m, sigma);
-    let chol = match a_shifted.clone().cholesky() {
-        Some(c) => c,
-        None => {
-            // If Cholesky fails, try with regularization
-            let mut a_reg = a_shifted;
-            for i in 0..n {
-                a_reg[(i, i)] += 1e-10 * a_reg[(i, i)].abs().max(1e-10);
-            }
-            match a_reg.cholesky() {
-                Some(c) => c,
-                None => return (Vec::new(), DMatrix::zeros(n, 0)),
-            }
+    let lu = a_shifted.clone().lu();
+
+    // Check if LU decomposition succeeded (matrix is non-singular)
+    let lu_factor = if lu.is_invertible() {
+        lu
+    } else {
+        // Try with regularization
+        let mut a_reg = a_shifted;
+        for i in 0..n {
+            a_reg[(i, i)] += 1e-8 * a_reg[(i, i)].abs().max(1e-8);
         }
+        let lu_reg = a_reg.lu();
+        if !lu_reg.is_invertible() {
+            return (Vec::new(), DMatrix::zeros(n, 0));
+        }
+        lu_reg
     };
 
     // Initialize Lanczos vectors
@@ -1133,7 +1140,7 @@ pub fn lanczos_shift_invert(
 
         // w = (K - sigma*M)^(-1) * M * v_curr
         let mv_curr = spmv(m, &v_curr);
-        let w = chol.solve(&mv_curr);
+        let w = lu_factor.solve(&mv_curr).unwrap_or_else(|| DVector::zeros(n));
 
         // alpha_j = w^T * M * v_curr
         let mw = spmv(m, &w);
@@ -1401,19 +1408,22 @@ pub fn lanczos_shift_invert_sprs(
     let num_lanczos = (num_modes + 10).min(n - 1).min(MAX_LANCZOS_ITER);
 
     // Build and factor the shifted matrix A = K - sigma * M
+    // Use LU decomposition since the shifted matrix may be indefinite
     let a_shifted = build_shifted_matrix_dense_sprs(k, m, sigma);
-    let chol = match a_shifted.clone().cholesky() {
-        Some(c) => c,
-        None => {
-            let mut a_reg = a_shifted;
-            for i in 0..n {
-                a_reg[(i, i)] += 1e-10 * a_reg[(i, i)].abs().max(1e-10);
-            }
-            match a_reg.cholesky() {
-                Some(c) => c,
-                None => return (Vec::new(), DMatrix::zeros(n, 0)),
-            }
+    let lu = a_shifted.clone().lu();
+
+    let lu_factor = if lu.is_invertible() {
+        lu
+    } else {
+        let mut a_reg = a_shifted;
+        for i in 0..n {
+            a_reg[(i, i)] += 1e-8 * a_reg[(i, i)].abs().max(1e-8);
         }
+        let lu_reg = a_reg.lu();
+        if !lu_reg.is_invertible() {
+            return (Vec::new(), DMatrix::zeros(n, 0));
+        }
+        lu_reg
     };
 
     // Initialize Lanczos vectors
@@ -1438,7 +1448,7 @@ pub fn lanczos_shift_invert_sprs(
 
         // w = (K - sigma*M)^(-1) * M * v_curr
         let mv_curr = spmv_sprs(m, &v_curr);
-        let w = chol.solve(&mv_curr);
+        let w = lu_factor.solve(&mv_curr).unwrap_or_else(|| DVector::zeros(n));
 
         // alpha_j = w^T * M * v_curr
         let mw = spmv_sprs(m, &w);
