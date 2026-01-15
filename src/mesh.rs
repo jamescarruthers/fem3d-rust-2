@@ -3,8 +3,6 @@
 //! This module provides the `Mesh3d` struct and functions for generating
 //! uniform and adaptive meshes for bar geometries.
 
-use std::collections::HashMap;
-
 use nalgebra::Vector3;
 use serde::{Deserialize, Serialize};
 
@@ -169,6 +167,7 @@ impl Mesh3d {
 }
 
 /// Generate uniform 3D mesh following the Python reference.
+/// Uses direct indexing instead of HashMap for better performance.
 pub fn generate_bar_mesh_3d(
     length: f64,
     width: f64,
@@ -186,8 +185,13 @@ pub fn generate_bar_mesh_3d(
     let nny = ny + 1;
     let nnz = nz + 1;
 
+    // Direct indexing function - O(1) instead of HashMap lookup
+    // Node index = ix * (nny * nnz) + iy * nnz + iz
+    let node_idx = |ix: usize, iy: usize, iz: usize| -> usize {
+        ix * (nny * nnz) + iy * nnz + iz
+    };
+
     let mut nodes = Vec::with_capacity(nnx * nny * nnz);
-    let mut node_index = HashMap::new();
 
     for ix in 0..nnx {
         let x = ix as f64 * dx;
@@ -204,8 +208,6 @@ pub fn generate_bar_mesh_3d(
             let y = iy as f64 * dy;
             for iz in 0..nnz {
                 let z = iz as f64 * dz;
-                let idx = nodes.len();
-                node_index.insert((ix, iy, iz), idx);
                 nodes.push(Vector3::new(x, y, z));
             }
         }
@@ -218,14 +220,14 @@ pub fn generate_bar_mesh_3d(
         let h = element_heights[ix];
         for iy in 0..ny {
             for iz in 0..nz {
-                let n0 = node_index[&(ix, iy, iz)];
-                let n1 = node_index[&(ix + 1, iy, iz)];
-                let n2 = node_index[&(ix + 1, iy + 1, iz)];
-                let n3 = node_index[&(ix, iy + 1, iz)];
-                let n4 = node_index[&(ix, iy, iz + 1)];
-                let n5 = node_index[&(ix + 1, iy, iz + 1)];
-                let n6 = node_index[&(ix + 1, iy + 1, iz + 1)];
-                let n7 = node_index[&(ix, iy + 1, iz + 1)];
+                let n0 = node_idx(ix, iy, iz);
+                let n1 = node_idx(ix + 1, iy, iz);
+                let n2 = node_idx(ix + 1, iy + 1, iz);
+                let n3 = node_idx(ix, iy + 1, iz);
+                let n4 = node_idx(ix, iy, iz + 1);
+                let n5 = node_idx(ix + 1, iy, iz + 1);
+                let n6 = node_idx(ix + 1, iy + 1, iz + 1);
+                let n7 = node_idx(ix, iy + 1, iz + 1);
 
                 elements.push([n0, n1, n2, n3, n4, n5, n6, n7]);
                 heights.push(h);
@@ -241,6 +243,7 @@ pub fn generate_bar_mesh_3d(
 }
 
 /// Generate adaptive mesh using supplied x-positions.
+/// Uses direct indexing instead of HashMap for better performance.
 pub fn generate_bar_mesh_3d_adaptive(
     length: f64,
     width: f64,
@@ -268,8 +271,12 @@ pub fn generate_bar_mesh_3d_adaptive(
     let nny = ny + 1;
     let nnz = nz + 1;
 
+    // Direct indexing function - O(1) instead of HashMap lookup
+    let node_idx = |ix: usize, iy: usize, iz: usize| -> usize {
+        ix * (nny * nnz) + iy * nnz + iz
+    };
+
     let mut nodes = Vec::with_capacity(nnx * nny * nnz);
-    let mut node_index = HashMap::new();
 
     for ix in 0..nnx {
         let x = x_positions[ix];
@@ -286,8 +293,6 @@ pub fn generate_bar_mesh_3d_adaptive(
             let y = iy as f64 * dy;
             for iz in 0..nnz {
                 let z = iz as f64 * dz;
-                let idx = nodes.len();
-                node_index.insert((ix, iy, iz), idx);
                 nodes.push(Vector3::new(x, y, z));
             }
         }
@@ -299,14 +304,14 @@ pub fn generate_bar_mesh_3d_adaptive(
         let h = element_heights[ix];
         for iy in 0..ny {
             for iz in 0..nz {
-                let n0 = node_index[&(ix, iy, iz)];
-                let n1 = node_index[&(ix + 1, iy, iz)];
-                let n2 = node_index[&(ix + 1, iy + 1, iz)];
-                let n3 = node_index[&(ix, iy + 1, iz)];
-                let n4 = node_index[&(ix, iy, iz + 1)];
-                let n5 = node_index[&(ix + 1, iy, iz + 1)];
-                let n6 = node_index[&(ix + 1, iy + 1, iz + 1)];
-                let n7 = node_index[&(ix, iy + 1, iz + 1)];
+                let n0 = node_idx(ix, iy, iz);
+                let n1 = node_idx(ix + 1, iy, iz);
+                let n2 = node_idx(ix + 1, iy + 1, iz);
+                let n3 = node_idx(ix, iy + 1, iz);
+                let n4 = node_idx(ix, iy, iz + 1);
+                let n5 = node_idx(ix + 1, iy, iz + 1);
+                let n6 = node_idx(ix + 1, iy + 1, iz + 1);
+                let n7 = node_idx(ix, iy + 1, iz + 1);
 
                 elements.push([n0, n1, n2, n3, n4, n5, n6, n7]);
                 heights.push(h);

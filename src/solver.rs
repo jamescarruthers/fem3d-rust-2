@@ -234,19 +234,18 @@ pub fn lanczos_shift_invert(
     // Build and factor the shifted matrix A = K - sigma * M
     // Use LU decomposition since the shifted matrix may be indefinite
     // (rigid body modes have λ ≈ 0, so K - σM has negative eigenvalues for σ > 0)
-    let a_shifted = build_shifted_matrix_dense(k, m, sigma);
+    let mut a_shifted = build_shifted_matrix_dense(k, m, sigma);
     let lu = a_shifted.clone().lu();
 
     // Check if LU decomposition succeeded (matrix is non-singular)
     let lu_factor = if lu.is_invertible() {
         lu
     } else {
-        // Try with regularization
-        let mut a_reg = a_shifted;
+        // Try with regularization - reuse a_shifted to avoid extra allocation
         for i in 0..n {
-            a_reg[(i, i)] += 1e-8 * a_reg[(i, i)].abs().max(1e-8);
+            a_shifted[(i, i)] += 1e-8 * a_shifted[(i, i)].abs().max(1e-8);
         }
-        let lu_reg = a_reg.lu();
+        let lu_reg = a_shifted.lu();
         if !lu_reg.is_invertible() {
             return (Vec::new(), DMatrix::zeros(n, 0));
         }
@@ -342,7 +341,11 @@ pub fn lanczos_shift_invert(
     let s = eig.eigenvectors;
 
     // Convert theta back to lambda: lambda = sigma + 1/theta
-    let mut eigen_pairs: Vec<(f64, DVector<f64>)> = Vec::new();
+    // Pre-allocate capacity for expected number of eigenpairs
+    let mut eigen_pairs: Vec<(f64, DVector<f64>)> = Vec::with_capacity(num_modes);
+    // Reuse a single temporary vector for eigenvector reconstruction
+    let mut y = DVector::zeros(n);
+
     for i in 0..m_lanczos {
         if theta[i].abs() > 1e-14 {
             let lambda = sigma + 1.0 / theta[i];
@@ -350,17 +353,18 @@ pub fn lanczos_shift_invert(
             // Only keep positive eigenvalues above rigid body threshold
             if lambda > RIGID_BODY_LAMBDA_THRESHOLD {
                 // Reconstruct eigenvector: y = V * s_i
+                // Reset y to zero for reuse
+                y.fill(0.0);
                 let s_col = s.column(i);
-                let mut y = DVector::zeros(n);
                 for j in 0..m_lanczos {
-                    y += s_col[j] * v_matrix.column(j);
+                    y.axpy(s_col[j], &v_matrix.column(j), 1.0);
                 }
 
                 // Normalize
                 let norm = y.norm();
                 if norm > 1e-14 {
-                    y /= norm;
-                    eigen_pairs.push((lambda, y));
+                    // Clone only when storing (y is reused)
+                    eigen_pairs.push((lambda, y.clone() / norm));
                 }
             }
         }
@@ -513,17 +517,17 @@ pub fn lanczos_shift_invert_sprs(
 
     // Build and factor the shifted matrix A = K - sigma * M
     // Use LU decomposition since the shifted matrix may be indefinite
-    let a_shifted = build_shifted_matrix_dense_sprs(k, m, sigma);
+    let mut a_shifted = build_shifted_matrix_dense_sprs(k, m, sigma);
     let lu = a_shifted.clone().lu();
 
     let lu_factor = if lu.is_invertible() {
         lu
     } else {
-        let mut a_reg = a_shifted;
+        // Try with regularization - reuse a_shifted to avoid extra allocation
         for i in 0..n {
-            a_reg[(i, i)] += 1e-8 * a_reg[(i, i)].abs().max(1e-8);
+            a_shifted[(i, i)] += 1e-8 * a_shifted[(i, i)].abs().max(1e-8);
         }
-        let lu_reg = a_reg.lu();
+        let lu_reg = a_shifted.lu();
         if !lu_reg.is_invertible() {
             return (Vec::new(), DMatrix::zeros(n, 0));
         }
@@ -618,22 +622,27 @@ pub fn lanczos_shift_invert_sprs(
     let s = eig.eigenvectors;
 
     // Convert theta back to lambda
-    let mut eigen_pairs: Vec<(f64, DVector<f64>)> = Vec::new();
+    // Pre-allocate capacity for expected number of eigenpairs
+    let mut eigen_pairs: Vec<(f64, DVector<f64>)> = Vec::with_capacity(num_modes);
+    // Reuse a single temporary vector for eigenvector reconstruction
+    let mut y = DVector::zeros(n);
+
     for i in 0..m_lanczos {
         if theta[i].abs() > 1e-14 {
             let lambda = sigma + 1.0 / theta[i];
 
             if lambda > RIGID_BODY_LAMBDA_THRESHOLD {
+                // Reset y to zero for reuse
+                y.fill(0.0);
                 let s_col = s.column(i);
-                let mut y = DVector::zeros(n);
                 for j in 0..m_lanczos {
-                    y += s_col[j] * v_matrix.column(j);
+                    y.axpy(s_col[j], &v_matrix.column(j), 1.0);
                 }
 
                 let norm = y.norm();
                 if norm > 1e-14 {
-                    y /= norm;
-                    eigen_pairs.push((lambda, y));
+                    // Clone only when storing (y is reused)
+                    eigen_pairs.push((lambda, y.clone() / norm));
                 }
             }
         }
