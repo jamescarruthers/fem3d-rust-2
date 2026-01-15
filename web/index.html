@@ -4,159 +4,688 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FEM3D WASM Test Harness</title>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
     <style>
+        :root {
+            --bg-dark: #1a1a2e;
+            --bg-card: #16213e;
+            --bg-input: #0f3460;
+            --accent-cyan: #00d9ff;
+            --accent-green: #00ff88;
+            --accent-orange: #ff9f43;
+            --accent-purple: #a855f7;
+            --text-primary: #eee;
+            --text-muted: #888;
+        }
+
+        * { box-sizing: border-box; }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
-            max-width: 900px;
+            max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
-            background: #1a1a2e;
-            color: #eee;
+            background: var(--bg-dark);
+            color: var(--text-primary);
         }
-        h1 { color: #00d9ff; }
-        h2 { color: #00ff88; margin-top: 30px; }
+
+        h1 { color: var(--accent-cyan); margin-bottom: 5px; }
+        h2 { color: var(--accent-green); margin-top: 30px; margin-bottom: 15px; }
+        h3 { color: var(--accent-orange); margin-top: 20px; margin-bottom: 10px; }
+
+        .subtitle { color: var(--text-muted); margin-bottom: 20px; }
+
         .test-section {
-            background: #16213e;
-            padding: 15px;
+            background: var(--bg-card);
+            padding: 20px;
             border-radius: 8px;
-            margin: 10px 0;
+            margin: 15px 0;
         }
+
         .result {
-            background: #0f3460;
-            padding: 10px;
+            background: var(--bg-input);
+            padding: 12px;
             border-radius: 4px;
             margin-top: 10px;
             font-family: monospace;
             white-space: pre-wrap;
             overflow-x: auto;
+            font-size: 13px;
         }
-        .success { border-left: 4px solid #00ff88; }
+
+        .success { border-left: 4px solid var(--accent-green); }
         .error { border-left: 4px solid #ff4444; }
-        .info { border-left: 4px solid #00d9ff; }
+        .info { border-left: 4px solid var(--accent-cyan); }
+        .warning { border-left: 4px solid var(--accent-orange); }
+
         button {
-            background: #00d9ff;
-            color: #1a1a2e;
+            background: var(--accent-cyan);
+            color: var(--bg-dark);
             border: none;
             padding: 10px 20px;
             border-radius: 4px;
             cursor: pointer;
             font-weight: bold;
-            margin: 5px;
+            margin: 5px 5px 5px 0;
+            transition: all 0.2s;
         }
-        button:hover { background: #00ff88; }
+        button:hover { background: var(--accent-green); }
         button:disabled { background: #555; cursor: not-allowed; }
+        button.secondary {
+            background: transparent;
+            border: 2px solid var(--accent-cyan);
+            color: var(--accent-cyan);
+        }
+        button.secondary:hover {
+            background: var(--accent-cyan);
+            color: var(--bg-dark);
+        }
+
         .memory-bar {
             height: 20px;
-            background: #0f3460;
+            background: var(--bg-input);
             border-radius: 4px;
             overflow: hidden;
             margin: 10px 0;
         }
         .memory-fill {
             height: 100%;
-            background: linear-gradient(90deg, #00ff88, #00d9ff);
+            background: linear-gradient(90deg, var(--accent-green), var(--accent-cyan));
             transition: width 0.3s;
         }
-        label { display: block; margin: 10px 0 5px; }
-        input[type="number"] {
-            background: #0f3460;
-            border: 1px solid #00d9ff;
-            color: #eee;
+
+        label {
+            display: block;
+            margin: 10px 0 5px;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        input[type="number"], select {
+            background: var(--bg-input);
+            border: 1px solid var(--accent-cyan);
+            color: var(--text-primary);
             padding: 8px;
             border-radius: 4px;
-            width: 100px;
+            width: 100%;
+            max-width: 200px;
         }
-        .controls { display: flex; flex-wrap: wrap; gap: 20px; }
-        .control-group { flex: 1; min-width: 200px; }
+
+        select {
+            max-width: 250px;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .control-group {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 15px;
+        }
+
+        .tab {
+            padding: 8px 16px;
+            background: var(--bg-input);
+            border: none;
+            border-radius: 4px 4px 0 0;
+            cursor: pointer;
+            color: var(--text-muted);
+            font-weight: bold;
+        }
+        .tab.active {
+            background: var(--accent-cyan);
+            color: var(--bg-dark);
+        }
+
+        .tab-content {
+            display: none;
+            padding: 15px;
+            background: var(--bg-input);
+            border-radius: 0 4px 4px 4px;
+        }
+        .tab-content.active { display: block; }
+
+        /* Three.js container */
+        #three-container {
+            width: 100%;
+            height: 400px;
+            background: #000;
+            border-radius: 8px;
+            margin: 15px 0;
+            position: relative;
+        }
+
+        #three-container canvas {
+            border-radius: 8px;
+        }
+
+        .three-controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 10;
+            display: flex;
+            gap: 5px;
+        }
+
+        .three-controls button {
+            padding: 5px 10px;
+            font-size: 12px;
+            opacity: 0.9;
+        }
+
+        .three-info {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: var(--text-primary);
+        }
+
+        /* Presets */
+        .presets {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 10px 0;
+        }
+        .preset-btn {
+            padding: 6px 12px;
+            font-size: 12px;
+            background: var(--bg-input);
+            border: 1px solid var(--accent-purple);
+            color: var(--accent-purple);
+        }
+        .preset-btn:hover {
+            background: var(--accent-purple);
+            color: white;
+        }
+
+        /* Workflow steps */
+        .workflow-step {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+            padding: 10px;
+            background: var(--bg-input);
+            border-radius: 4px;
+        }
+        .step-number {
+            width: 30px;
+            height: 30px;
+            background: var(--accent-cyan);
+            color: var(--bg-dark);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+        .step-number.done { background: var(--accent-green); }
+        .step-number.active { background: var(--accent-orange); }
+
+        /* Frequency display */
+        .freq-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .freq-card {
+            background: var(--bg-input);
+            padding: 12px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .freq-label {
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+        .freq-value {
+            color: var(--accent-cyan);
+            font-size: 20px;
+            font-weight: bold;
+        }
+        .freq-unit { font-size: 14px; }
+
+        /* Color scale legend */
+        .color-legend {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+            font-size: 12px;
+        }
+        .color-scale {
+            width: 200px;
+            height: 15px;
+            background: linear-gradient(to right, #0000ff, #00ff00, #ffff00, #ff0000);
+            border-radius: 3px;
+        }
+
+        .grid-2col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .grid-2col { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
     <h1>FEM3D WASM Test Harness</h1>
-    <p>Test the FEM library running as WebAssembly in your browser.</p>
+    <p class="subtitle">Interactive modal analysis for percussion bar tuning • Three.js visualization</p>
 
+    <!-- WASM Status -->
     <div class="test-section">
         <h2>WASM Status</h2>
         <div id="wasm-status" class="result info">Loading WASM module...</div>
-    </div>
-
-    <div class="test-section">
-        <h2>Memory Usage</h2>
         <div class="memory-bar">
             <div id="memory-fill" class="memory-fill" style="width: 0%"></div>
         </div>
-        <div id="memory-info" class="result info">Calculating...</div>
+        <div id="memory-info" style="font-size: 12px; color: var(--text-muted);">Memory: calculating...</div>
     </div>
 
+    <!-- Material Selection -->
+    <div class="test-section">
+        <h2>Material Selection</h2>
+        <p>Select a material for all analyses. Materials are grouped by category.</p>
+        <div class="controls">
+            <div class="control-group">
+                <label>Material Category:</label>
+                <select id="material-category" onchange="updateMaterialList()">
+                    <option value="woods">Woods (Marimbas, Xylophones)</option>
+                    <option value="metals">Metals (Vibraphones, Glockenspiels)</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>Material:</label>
+                <select id="material-select" onchange="onMaterialChange()">
+                    <option value="sapele">Loading...</option>
+                </select>
+            </div>
+        </div>
+        <div id="material-info" class="result info">Select a material to see properties...</div>
+    </div>
+
+    <!-- Quick Tests Section -->
+    <div class="test-section">
+        <h2>Quick Analysis Examples</h2>
+        <p>Pre-configured test cases for different bar types and sizes.</p>
+
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('tab-marimba')">Marimba</button>
+            <button class="tab" onclick="showTab('tab-vibraphone')">Vibraphone</button>
+            <button class="tab" onclick="showTab('tab-xylophone')">Xylophone</button>
+            <button class="tab" onclick="showTab('tab-custom')">Custom</button>
+        </div>
+
+        <div id="tab-marimba" class="tab-content active">
+            <h3>Marimba Bar Presets</h3>
+            <p>Wooden bars typical of 4.3 octave marimba (A2 to C7)</p>
+            <div class="presets">
+                <button class="preset-btn" onclick="loadPreset('marimba-c4')">C4 (262 Hz)</button>
+                <button class="preset-btn" onclick="loadPreset('marimba-a3')">A3 (220 Hz)</button>
+                <button class="preset-btn" onclick="loadPreset('marimba-c3')">C3 (131 Hz)</button>
+                <button class="preset-btn" onclick="loadPreset('marimba-a2')">A2 (110 Hz) - Low</button>
+            </div>
+        </div>
+
+        <div id="tab-vibraphone" class="tab-content">
+            <h3>Vibraphone Bar Presets</h3>
+            <p>Aluminum bars typical of 3 octave vibraphone (F3 to F6)</p>
+            <div class="presets">
+                <button class="preset-btn" onclick="loadPreset('vibe-f4')">F4 (349 Hz)</button>
+                <button class="preset-btn" onclick="loadPreset('vibe-c5')">C5 (523 Hz)</button>
+                <button class="preset-btn" onclick="loadPreset('vibe-f5')">F5 (698 Hz)</button>
+            </div>
+        </div>
+
+        <div id="tab-xylophone" class="tab-content">
+            <h3>Xylophone Bar Presets</h3>
+            <p>Rosewood bars typical of concert xylophone</p>
+            <div class="presets">
+                <button class="preset-btn" onclick="loadPreset('xylo-c5')">C5 (523 Hz)</button>
+                <button class="preset-btn" onclick="loadPreset('xylo-c6')">C6 (1047 Hz)</button>
+            </div>
+        </div>
+
+        <div id="tab-custom" class="tab-content">
+            <h3>Custom Bar Parameters</h3>
+            <div class="controls">
+                <div class="control-group">
+                    <label>Length (m):</label>
+                    <input type="number" id="preset-length" value="0.3" step="0.01">
+                    <label>Width (m):</label>
+                    <input type="number" id="preset-width" value="0.05" step="0.005">
+                    <label>Height (m):</label>
+                    <input type="number" id="preset-height" value="0.02" step="0.001">
+                </div>
+                <div class="control-group">
+                    <label>Target f1 (Hz):</label>
+                    <input type="number" id="preset-f1" value="262" step="1">
+                    <label>Tuning Ratio (f2/f1):</label>
+                    <input type="number" id="preset-ratio" value="4.0" step="0.1">
+                </div>
+            </div>
+            <br>
+            <button onclick="loadPreset('custom')">Load Custom Preset</button>
+        </div>
+    </div>
+
+    <!-- 2D Beam Analysis -->
     <div class="test-section">
         <h2>2D Beam Analysis (Fast)</h2>
-        <p>Uses Timoshenko beam theory - fast and low memory.</p>
+        <p>Timoshenko beam theory - fast for optimization loops. Computes flexural modes.</p>
+
         <div class="controls">
             <div class="control-group">
                 <label>Bar Length (m):</label>
-                <input type="number" id="length2d" value="0.5" step="0.01">
+                <input type="number" id="length2d" value="0.3" step="0.01">
                 <label>Width (m):</label>
-                <input type="number" id="width2d" value="0.03" step="0.001">
-                <label>Height (m):</label>
-                <input type="number" id="height2d" value="0.024" step="0.001">
+                <input type="number" id="width2d" value="0.05" step="0.005">
+                <label>Height h₀ (m):</label>
+                <input type="number" id="height2d" value="0.02" step="0.001">
             </div>
             <div class="control-group">
                 <label>Elements:</label>
-                <input type="number" id="elements2d" value="50" step="10">
+                <input type="number" id="elements2d" value="100" step="10">
                 <label>Modes:</label>
                 <input type="number" id="modes2d" value="4" step="1">
             </div>
         </div>
+
+        <h3>Cut Geometry (Symmetric)</h3>
+        <div class="controls">
+            <div class="control-group">
+                <label>Cut 1 - Lambda (m from center):</label>
+                <input type="number" id="cut1-lambda" value="0.12" step="0.01">
+                <label>Cut 1 - Height h (m):</label>
+                <input type="number" id="cut1-h" value="0.012" step="0.001">
+            </div>
+            <div class="control-group">
+                <label>Cut 2 - Lambda (m from center):</label>
+                <input type="number" id="cut2-lambda" value="0.06" step="0.01">
+                <label>Cut 2 - Height h (m):</label>
+                <input type="number" id="cut2-h" value="0.015" step="0.001">
+            </div>
+        </div>
         <br>
         <button onclick="run2DAnalysis()">Run 2D Analysis</button>
-        <div id="result-2d" class="result info">Click to run...</div>
+        <button class="secondary" onclick="run2DUncut()">Run Uncut Bar</button>
+
+        <div id="result-2d" class="result info">Configure parameters and click Run...</div>
+
+        <div id="freq-display-2d" class="freq-grid" style="display: none;"></div>
     </div>
 
+    <!-- Optimization Workflow -->
     <div class="test-section">
-        <h2>3D FEM Analysis</h2>
-        <p>Full 3D hexahedral mesh - more accurate but memory intensive.</p>
+        <h2>Optimization Workflow</h2>
+        <p>Design cut geometry to achieve target frequencies, then verify with 3D analysis.</p>
+
+        <div class="workflow-step">
+            <div class="step-number" id="step1-num">1</div>
+            <div>
+                <strong>Define Target Frequencies</strong>
+                <p style="margin: 5px 0 0; font-size: 13px; color: var(--text-muted);">
+                    Set fundamental frequency and tuning ratios
+                </p>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label>Fundamental f1 (Hz):</label>
+                <input type="number" id="target-f1" value="262" step="1">
+                <label>f2/f1 Ratio (typically 4.0 for marimba):</label>
+                <input type="number" id="target-ratio2" value="4.0" step="0.1">
+            </div>
+            <div class="control-group">
+                <label>f3/f1 Ratio (typically 10.0):</label>
+                <input type="number" id="target-ratio3" value="10.0" step="0.1">
+                <label>f4/f1 Ratio (typically 20.0):</label>
+                <input type="number" id="target-ratio4" value="20.0" step="0.1">
+            </div>
+        </div>
+
+        <div id="target-freqs" class="freq-grid" style="margin-top: 15px;"></div>
+
+        <br>
+        <button onclick="updateTargetFreqs()">Update Targets</button>
+
+        <div class="workflow-step">
+            <div class="step-number" id="step2-num">2</div>
+            <div>
+                <strong>Optimize Cut Profile (2D)</strong>
+                <p style="margin: 5px 0 0; font-size: 13px; color: var(--text-muted);">
+                    Use fast 2D analysis to find optimal cut geometry
+                </p>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label>Number of Cuts:</label>
+                <select id="opt-num-cuts">
+                    <option value="1">1 Cut (Simple)</option>
+                    <option value="2" selected>2 Cuts (Standard)</option>
+                    <option value="3">3 Cuts (Complex)</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>Search Iterations:</label>
+                <input type="number" id="opt-iterations" value="50" step="10">
+            </div>
+        </div>
+        <br>
+        <button onclick="runOptimization()">Run Optimization</button>
+        <div id="opt-result" class="result info">Click Run Optimization to search for optimal cuts...</div>
+
+        <div class="workflow-step">
+            <div class="step-number" id="step3-num">3</div>
+            <div>
+                <strong>Verify with 3D Analysis</strong>
+                <p style="margin: 5px 0 0; font-size: 13px; color: var(--text-muted);">
+                    Confirm frequencies with full 3D FEM and visualize geometry
+                </p>
+            </div>
+        </div>
+
+        <button onclick="verify3D()">Verify with 3D FEM</button>
+        <button class="secondary" onclick="visualize3D()">Visualize Only</button>
+        <div id="verify-result" class="result info">Click Verify to run 3D analysis...</div>
+    </div>
+
+    <!-- 3D Visualization -->
+    <div class="test-section">
+        <h2>3D Mesh Visualization</h2>
+        <p>Interactive Three.js visualization of the bar geometry. Colors indicate element heights.</p>
+
+        <div id="three-container">
+            <div class="three-controls">
+                <button onclick="resetCamera()">Reset View</button>
+                <button onclick="toggleWireframe()">Wireframe</button>
+                <button onclick="toggleAxes()">Axes</button>
+            </div>
+            <div class="three-info" id="three-info">
+                Drag to rotate • Scroll to zoom • Right-drag to pan
+            </div>
+        </div>
+
+        <div class="color-legend">
+            <span>Height:</span>
+            <span>Min</span>
+            <div class="color-scale"></div>
+            <span>Max</span>
+        </div>
+
+        <h3>3D Mesh Parameters</h3>
+        <div class="controls">
+            <div class="control-group">
+                <label>NX (length divisions):</label>
+                <input type="number" id="nx" value="20" step="2">
+                <label>NY (width divisions):</label>
+                <input type="number" id="ny" value="3" step="1">
+            </div>
+            <div class="control-group">
+                <label>NZ (height divisions):</label>
+                <input type="number" id="nz" value="3" step="1">
+                <label>Modes to compute:</label>
+                <input type="number" id="modes3d" value="4" step="1">
+            </div>
+        </div>
+
+        <div id="mesh-info" class="result info">Mesh not generated yet...</div>
+    </div>
+
+    <!-- Full 3D Analysis -->
+    <div class="test-section">
+        <h2>Full 3D FEM Analysis</h2>
+        <p>Direct 3D hexahedral mesh analysis - more accurate but memory intensive.</p>
+
         <div class="controls">
             <div class="control-group">
                 <label>Bar Length (m):</label>
                 <input type="number" id="length3d" value="0.3" step="0.01">
                 <label>Width (m):</label>
-                <input type="number" id="width3d" value="0.03" step="0.001">
+                <input type="number" id="width3d" value="0.05" step="0.005">
                 <label>Height (m):</label>
                 <input type="number" id="height3d" value="0.02" step="0.001">
             </div>
             <div class="control-group">
-                <label>NX (length divisions):</label>
-                <input type="number" id="nx" value="12" step="1">
-                <label>NY (width divisions):</label>
-                <input type="number" id="ny" value="2" step="1">
-                <label>NZ (height divisions):</label>
-                <input type="number" id="nz" value="2" step="1">
-                <label>Modes:</label>
-                <input type="number" id="modes3d" value="4" step="1">
+                <label>Use Cut Profile:</label>
+                <select id="use-cuts-3d">
+                    <option value="no">Uniform Height</option>
+                    <option value="yes" selected>From Cut Parameters</option>
+                </select>
             </div>
         </div>
         <br>
         <button onclick="checkMemory()">Check Memory</button>
         <button onclick="run3DAnalysis()">Run 3D Analysis</button>
-        <div id="result-3d" class="result info">Click to run...</div>
+        <button class="secondary" onclick="run3DWithViz()">Run + Visualize</button>
+
+        <div id="result-3d" class="result info">Configure parameters and click Run...</div>
+        <div id="freq-display-3d" class="freq-grid" style="display: none;"></div>
     </div>
 
+    <!-- Memory Stress Test -->
     <div class="test-section">
         <h2>Memory Stress Test</h2>
         <p>Test progressively larger meshes to find browser limits.</p>
         <button onclick="runStressTest()">Run Stress Test</button>
-        <div id="stress-result" class="result info">Click to run...</div>
+        <div id="stress-result" class="result info">Click to run stress test...</div>
     </div>
 
     <script type="module">
-        // Import the WASM module
-        // Note: You need to build with wasm-pack first:
-        //   wasm-pack build --target web --no-default-features
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+        // Global state
         let wasm = null;
+        let materials = { metals: [], woods: [] };
+        let currentMaterial = { name: 'Sapele', e: 12.0e9, nu: 0.35, rho: 640.0 };
+        let currentCuts = [];
+        let currentHeights = [];
+        let optimizedCuts = null;
 
+        // Three.js state
+        let scene, camera, renderer, controls;
+        let meshGroup = null;
+        let wireframeVisible = false;
+        let axesHelper = null;
+
+        // Presets database
+        const PRESETS = {
+            'marimba-c4': {
+                material: 'sapele',
+                length: 0.28, width: 0.05, height: 0.022,
+                f1: 262, ratio2: 4.0, ratio3: 10.0,
+                cuts: [{ lambda: 0.11, h: 0.012 }, { lambda: 0.05, h: 0.016 }]
+            },
+            'marimba-a3': {
+                material: 'sapele',
+                length: 0.34, width: 0.055, height: 0.024,
+                f1: 220, ratio2: 4.0, ratio3: 10.0,
+                cuts: [{ lambda: 0.14, h: 0.013 }, { lambda: 0.07, h: 0.017 }]
+            },
+            'marimba-c3': {
+                material: 'rosewood',
+                length: 0.45, width: 0.065, height: 0.028,
+                f1: 131, ratio2: 4.0, ratio3: 10.0,
+                cuts: [{ lambda: 0.18, h: 0.015 }, { lambda: 0.09, h: 0.019 }]
+            },
+            'marimba-a2': {
+                material: 'rosewood',
+                length: 0.55, width: 0.075, height: 0.032,
+                f1: 110, ratio2: 4.0, ratio3: 10.0,
+                cuts: [{ lambda: 0.22, h: 0.017 }, { lambda: 0.11, h: 0.022 }]
+            },
+            'vibe-f4': {
+                material: 'aluminum',
+                length: 0.24, width: 0.038, height: 0.012,
+                f1: 349, ratio2: 4.0, ratio3: 10.0,
+                cuts: [{ lambda: 0.09, h: 0.006 }, { lambda: 0.045, h: 0.008 }]
+            },
+            'vibe-c5': {
+                material: 'aluminum',
+                length: 0.19, width: 0.038, height: 0.010,
+                f1: 523, ratio2: 4.0, ratio3: 10.0,
+                cuts: [{ lambda: 0.07, h: 0.005 }, { lambda: 0.035, h: 0.007 }]
+            },
+            'vibe-f5': {
+                material: 'aluminum',
+                length: 0.15, width: 0.038, height: 0.008,
+                f1: 698, ratio2: 4.0, ratio3: 10.0,
+                cuts: [{ lambda: 0.055, h: 0.004 }, { lambda: 0.028, h: 0.006 }]
+            },
+            'xylo-c5': {
+                material: 'rosewood',
+                length: 0.16, width: 0.028, height: 0.018,
+                f1: 523, ratio2: 3.0, ratio3: 6.0,
+                cuts: [{ lambda: 0.06, h: 0.010 }]
+            },
+            'xylo-c6': {
+                material: 'rosewood',
+                length: 0.11, width: 0.024, height: 0.014,
+                f1: 1047, ratio2: 3.0, ratio3: 6.0,
+                cuts: [{ lambda: 0.04, h: 0.008 }]
+            }
+        };
+
+        // Initialize everything
+        async function init() {
+            initThreeJS();
+            await loadWasm();
+            updateTargetFreqs();
+        }
+
+        // ========== WASM Loading ==========
         async function loadWasm() {
             try {
-                // Try to load the WASM module
                 const module = await import('../pkg/fem3d_rust_2.js');
                 await module.default();
                 wasm = module;
@@ -164,6 +693,11 @@
                 document.getElementById('wasm-status').className = 'result success';
                 document.getElementById('wasm-status').textContent = 'WASM module loaded successfully!';
 
+                // Load materials
+                const materialsJson = wasm.get_materials_json();
+                materials = JSON.parse(materialsJson);
+
+                updateMaterialList();
                 updateMemoryInfo();
             } catch (e) {
                 document.getElementById('wasm-status').className = 'result error';
@@ -172,6 +706,129 @@
             }
         }
 
+        // ========== Material Selection ==========
+        window.updateMaterialList = function() {
+            const category = document.getElementById('material-category').value;
+            const select = document.getElementById('material-select');
+            const matList = materials[category] || [];
+
+            select.innerHTML = matList.map(m =>
+                `<option value="${m.key}">${m.name}</option>`
+            ).join('');
+
+            // Select sapele by default for woods, aluminum for metals
+            if (category === 'woods' && matList.some(m => m.key === 'sapele')) {
+                select.value = 'sapele';
+            } else if (category === 'metals' && matList.some(m => m.key === 'aluminum')) {
+                select.value = 'aluminum';
+            }
+
+            onMaterialChange();
+        };
+
+        window.onMaterialChange = function() {
+            const key = document.getElementById('material-select').value;
+            const category = document.getElementById('material-category').value;
+            const mat = (materials[category] || []).find(m => m.key === key);
+
+            if (mat) {
+                currentMaterial = mat;
+                document.getElementById('material-info').className = 'result success';
+                document.getElementById('material-info').textContent =
+                    `${mat.name}\n` +
+                    `  Young's Modulus (E): ${(mat.e / 1e9).toFixed(2)} GPa\n` +
+                    `  Density (ρ): ${mat.rho.toFixed(0)} kg/m³\n` +
+                    `  Poisson's Ratio (ν): ${mat.nu.toFixed(3)}`;
+            }
+        };
+
+        // ========== Tab Navigation ==========
+        window.showTab = function(tabId) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+            document.getElementById(tabId).classList.add('active');
+            event.target.classList.add('active');
+        };
+
+        // ========== Presets ==========
+        window.loadPreset = function(presetId) {
+            let preset;
+
+            if (presetId === 'custom') {
+                preset = {
+                    length: parseFloat(document.getElementById('preset-length').value),
+                    width: parseFloat(document.getElementById('preset-width').value),
+                    height: parseFloat(document.getElementById('preset-height').value),
+                    f1: parseFloat(document.getElementById('preset-f1').value),
+                    ratio2: parseFloat(document.getElementById('preset-ratio').value),
+                    ratio3: 10.0,
+                    cuts: [
+                        { lambda: 0.1, h: 0.01 },
+                        { lambda: 0.05, h: 0.012 }
+                    ]
+                };
+            } else {
+                preset = PRESETS[presetId];
+                if (!preset) return;
+
+                // Update material if preset specifies one
+                if (preset.material) {
+                    const isWood = materials.woods.some(m => m.key === preset.material);
+                    document.getElementById('material-category').value = isWood ? 'woods' : 'metals';
+                    updateMaterialList();
+                    document.getElementById('material-select').value = preset.material;
+                    onMaterialChange();
+                }
+            }
+
+            // Update 2D parameters
+            document.getElementById('length2d').value = preset.length;
+            document.getElementById('width2d').value = preset.width;
+            document.getElementById('height2d').value = preset.height;
+
+            // Update 3D parameters
+            document.getElementById('length3d').value = preset.length;
+            document.getElementById('width3d').value = preset.width;
+            document.getElementById('height3d').value = preset.height;
+
+            // Update target frequencies
+            document.getElementById('target-f1').value = preset.f1;
+            document.getElementById('target-ratio2').value = preset.ratio2;
+            document.getElementById('target-ratio3').value = preset.ratio3;
+            updateTargetFreqs();
+
+            // Update cuts
+            if (preset.cuts && preset.cuts.length >= 1) {
+                document.getElementById('cut1-lambda').value = preset.cuts[0].lambda;
+                document.getElementById('cut1-h').value = preset.cuts[0].h;
+            }
+            if (preset.cuts && preset.cuts.length >= 2) {
+                document.getElementById('cut2-lambda').value = preset.cuts[1].lambda;
+                document.getElementById('cut2-h').value = preset.cuts[1].h;
+            }
+
+            currentCuts = preset.cuts || [];
+        };
+
+        // ========== Target Frequencies ==========
+        window.updateTargetFreqs = function() {
+            const f1 = parseFloat(document.getElementById('target-f1').value);
+            const r2 = parseFloat(document.getElementById('target-ratio2').value);
+            const r3 = parseFloat(document.getElementById('target-ratio3').value);
+            const r4 = parseFloat(document.getElementById('target-ratio4').value);
+
+            const targets = [f1, f1 * r2, f1 * r3, f1 * r4];
+
+            document.getElementById('target-freqs').innerHTML = targets.map((f, i) => `
+                <div class="freq-card">
+                    <div class="freq-label">Target f${i+1}</div>
+                    <div class="freq-value">${f.toFixed(1)} <span class="freq-unit">Hz</span></div>
+                </div>
+            `).join('');
+        };
+
+        // ========== Memory Info ==========
         function updateMemoryInfo() {
             if (performance.memory) {
                 const used = performance.memory.usedJSHeapSize;
@@ -180,24 +837,17 @@
 
                 document.getElementById('memory-fill').style.width = percent + '%';
                 document.getElementById('memory-info').textContent =
-                    `Used: ${(used / 1024 / 1024).toFixed(1)} MB / ${(total / 1024 / 1024).toFixed(0)} MB (${percent}%)`;
+                    `Memory: ${(used / 1024 / 1024).toFixed(1)} MB / ${(total / 1024 / 1024).toFixed(0)} MB (${percent}%)`;
             } else {
                 document.getElementById('memory-info').textContent =
-                    'Memory API not available in this browser (try Chrome)';
+                    'Memory API not available (try Chrome for memory monitoring)';
             }
         }
 
-        // Material properties (Sapele wood)
-        const SAPELE = {
-            e: 10.0e9,   // Young's modulus (Pa)
-            nu: 0.35,    // Poisson's ratio
-            rho: 640.0   // Density (kg/m³)
-        };
-
+        // ========== 2D Analysis ==========
         window.run2DAnalysis = async function() {
             if (!wasm) {
-                document.getElementById('result-2d').className = 'result error';
-                document.getElementById('result-2d').textContent = 'WASM not loaded';
+                showResult('result-2d', 'error', 'WASM not loaded');
                 return;
             }
 
@@ -207,38 +857,269 @@
             const elements = parseInt(document.getElementById('elements2d').value);
             const modes = parseInt(document.getElementById('modes2d').value);
 
-            // Two symmetric cuts
-            const cuts = JSON.stringify([
-                { lambda: 0.22, h: 0.5 },
-                { lambda: 0.78, h: 0.5 }
-            ]);
+            // Get cuts from inputs
+            const cuts = [
+                { lambda: parseFloat(document.getElementById('cut1-lambda').value), h: parseFloat(document.getElementById('cut1-h').value) },
+                { lambda: parseFloat(document.getElementById('cut2-lambda').value), h: parseFloat(document.getElementById('cut2-h').value) }
+            ].filter(c => c.lambda > 0 && c.h > 0 && c.h < height);
 
-            const resultEl = document.getElementById('result-2d');
-            resultEl.textContent = 'Computing...';
+            currentCuts = cuts;
+
+            showResult('result-2d', 'info', 'Computing...');
 
             try {
                 const start = performance.now();
                 const result = wasm.compute_frequencies_2d(
-                    cuts, length, width, height,
-                    SAPELE.e, SAPELE.nu, SAPELE.rho,
+                    JSON.stringify(cuts), length, width, height,
+                    currentMaterial.e, currentMaterial.nu, currentMaterial.rho,
                     elements, modes
                 );
                 const elapsed = performance.now() - start;
 
                 const frequencies = JSON.parse(result);
-                resultEl.className = 'result success';
-                resultEl.textContent =
-                    `Computed in ${elapsed.toFixed(1)} ms\n\n` +
-                    `Modal Frequencies (Hz):\n` +
-                    frequencies.map((f, i) => `  Mode ${i+1}: ${f.toFixed(2)} Hz`).join('\n');
+                displayFrequencies('result-2d', 'freq-display-2d', frequencies, elapsed, '2D Beam');
+
+                // Also generate heights for 3D viz
+                const heightsResult = wasm.cuts_to_heights(
+                    JSON.stringify(cuts), length, height,
+                    parseInt(document.getElementById('nx').value)
+                );
+                currentHeights = JSON.parse(heightsResult);
 
                 updateMemoryInfo();
             } catch (e) {
-                resultEl.className = 'result error';
-                resultEl.textContent = 'Error: ' + e;
+                showResult('result-2d', 'error', 'Error: ' + e);
             }
         };
 
+        window.run2DUncut = async function() {
+            if (!wasm) return;
+
+            const length = parseFloat(document.getElementById('length2d').value);
+            const width = parseFloat(document.getElementById('width2d').value);
+            const height = parseFloat(document.getElementById('height2d').value);
+            const elements = parseInt(document.getElementById('elements2d').value);
+            const modes = parseInt(document.getElementById('modes2d').value);
+
+            try {
+                const start = performance.now();
+                const result = wasm.compute_frequencies_2d(
+                    '[]', length, width, height,
+                    currentMaterial.e, currentMaterial.nu, currentMaterial.rho,
+                    elements, modes
+                );
+                const elapsed = performance.now() - start;
+
+                const frequencies = JSON.parse(result);
+                displayFrequencies('result-2d', 'freq-display-2d', frequencies, elapsed, '2D Uncut Bar');
+            } catch (e) {
+                showResult('result-2d', 'error', 'Error: ' + e);
+            }
+        };
+
+        // ========== Optimization ==========
+        window.runOptimization = async function() {
+            if (!wasm) {
+                showResult('opt-result', 'error', 'WASM not loaded');
+                return;
+            }
+
+            const f1 = parseFloat(document.getElementById('target-f1').value);
+            const r2 = parseFloat(document.getElementById('target-ratio2').value);
+            const r3 = parseFloat(document.getElementById('target-ratio3').value);
+            const targets = [f1, f1 * r2, f1 * r3];
+
+            const numCuts = parseInt(document.getElementById('opt-num-cuts').value);
+            const iterations = parseInt(document.getElementById('opt-iterations').value);
+
+            const length = parseFloat(document.getElementById('length2d').value);
+            const width = parseFloat(document.getElementById('width2d').value);
+            const height = parseFloat(document.getElementById('height2d').value);
+
+            document.getElementById('step2-num').classList.add('active');
+            showResult('opt-result', 'warning', 'Optimizing... This may take a moment.');
+
+            // Simple random search optimization (simplified for browser)
+            try {
+                let bestCuts = [];
+                let bestError = Infinity;
+                let bestFreqs = [];
+
+                for (let iter = 0; iter < iterations; iter++) {
+                    // Generate random cuts
+                    const cuts = [];
+                    for (let c = 0; c < numCuts; c++) {
+                        const maxLambda = length / 2 * 0.9;
+                        const lambda = Math.random() * maxLambda;
+                        const h = height * (0.3 + Math.random() * 0.5);
+                        cuts.push({ lambda, h });
+                    }
+                    cuts.sort((a, b) => b.lambda - a.lambda);
+
+                    // Compute frequencies
+                    const result = wasm.compute_frequencies_2d(
+                        JSON.stringify(cuts), length, width, height,
+                        currentMaterial.e, currentMaterial.nu, currentMaterial.rho,
+                        100, 3
+                    );
+                    const freqs = JSON.parse(result);
+
+                    // Calculate error
+                    let error = 0;
+                    for (let i = 0; i < Math.min(targets.length, freqs.length); i++) {
+                        error += Math.abs(freqs[i] - targets[i]) / targets[i];
+                    }
+
+                    if (error < bestError) {
+                        bestError = error;
+                        bestCuts = cuts;
+                        bestFreqs = freqs;
+                    }
+
+                    // Progress update every 10 iterations
+                    if (iter % 10 === 0) {
+                        showResult('opt-result', 'warning',
+                            `Iteration ${iter}/${iterations}...\nBest error: ${(bestError * 100).toFixed(2)}%`);
+                        await new Promise(r => setTimeout(r, 0));
+                    }
+                }
+
+                optimizedCuts = bestCuts;
+                currentCuts = bestCuts;
+
+                // Update cut inputs
+                if (bestCuts.length >= 1) {
+                    document.getElementById('cut1-lambda').value = bestCuts[0].lambda.toFixed(4);
+                    document.getElementById('cut1-h').value = bestCuts[0].h.toFixed(4);
+                }
+                if (bestCuts.length >= 2) {
+                    document.getElementById('cut2-lambda').value = bestCuts[1].lambda.toFixed(4);
+                    document.getElementById('cut2-h').value = bestCuts[1].h.toFixed(4);
+                }
+
+                document.getElementById('step2-num').classList.remove('active');
+                document.getElementById('step2-num').classList.add('done');
+
+                let resultText = `Optimization complete!\n\n`;
+                resultText += `Total error: ${(bestError * 100).toFixed(2)}%\n\n`;
+                resultText += `Optimized Cuts:\n`;
+                bestCuts.forEach((c, i) => {
+                    resultText += `  Cut ${i+1}: λ = ${(c.lambda * 1000).toFixed(1)} mm, h = ${(c.h * 1000).toFixed(1)} mm\n`;
+                });
+                resultText += `\nComputed Frequencies:\n`;
+                bestFreqs.forEach((f, i) => {
+                    const target = targets[i] || 0;
+                    const errorCents = target > 0 ? 1200 * Math.log2(f / target) : 0;
+                    resultText += `  f${i+1}: ${f.toFixed(1)} Hz (target: ${target.toFixed(1)} Hz, error: ${errorCents.toFixed(0)} cents)\n`;
+                });
+
+                showResult('opt-result', 'success', resultText);
+            } catch (e) {
+                showResult('opt-result', 'error', 'Optimization error: ' + e);
+            }
+        };
+
+        // ========== 3D Verification ==========
+        window.verify3D = async function() {
+            if (!wasm || currentCuts.length === 0) {
+                showResult('verify-result', 'error', 'No cuts to verify. Run optimization first.');
+                return;
+            }
+
+            document.getElementById('step3-num').classList.add('active');
+            showResult('verify-result', 'warning', 'Running 3D FEM verification...');
+
+            const length = parseFloat(document.getElementById('length2d').value);
+            const width = parseFloat(document.getElementById('width2d').value);
+            const height = parseFloat(document.getElementById('height2d').value);
+            const nx = parseInt(document.getElementById('nx').value);
+            const ny = parseInt(document.getElementById('ny').value);
+            const nz = parseInt(document.getElementById('nz').value);
+            const modes = parseInt(document.getElementById('modes3d').value);
+
+            try {
+                // Generate heights from cuts
+                const heightsResult = wasm.cuts_to_heights(
+                    JSON.stringify(currentCuts), length, height, nx
+                );
+                const heights = JSON.parse(heightsResult);
+                currentHeights = heights;
+
+                // Run 3D analysis with mesh
+                const start = performance.now();
+                const result = wasm.compute_3d_with_mesh(
+                    length, width, JSON.stringify(heights), nx, ny, nz,
+                    currentMaterial.e, currentMaterial.nu, currentMaterial.rho, modes
+                );
+                const elapsed = performance.now() - start;
+
+                const data = JSON.parse(result);
+
+                document.getElementById('step3-num').classList.remove('active');
+                document.getElementById('step3-num').classList.add('done');
+
+                // Display results
+                let resultText = `3D FEM Verification (${elapsed.toFixed(0)} ms)\n\n`;
+                resultText += `Mesh: ${nx}x${ny}x${nz} (${data.mesh.metadata.num_elements} elements, ${data.mesh.metadata.num_dof} DOF)\n\n`;
+                resultText += `Frequencies:\n`;
+
+                const f1 = parseFloat(document.getElementById('target-f1').value);
+                const r2 = parseFloat(document.getElementById('target-ratio2').value);
+                const r3 = parseFloat(document.getElementById('target-ratio3').value);
+                const r4 = parseFloat(document.getElementById('target-ratio4').value);
+                const targets = [f1, f1 * r2, f1 * r3, f1 * r4];
+
+                data.frequencies.forEach((f, i) => {
+                    const target = targets[i] || 0;
+                    const errorCents = target > 0 ? 1200 * Math.log2(f / target) : 0;
+                    resultText += `  f${i+1}: ${f.toFixed(1)} Hz (target: ${target.toFixed(1)} Hz, error: ${errorCents.toFixed(0)} cents)\n`;
+                });
+
+                showResult('verify-result', 'success', resultText);
+
+                // Visualize mesh
+                visualizeMesh(data.mesh);
+
+                updateMemoryInfo();
+            } catch (e) {
+                showResult('verify-result', 'error', '3D verification error: ' + e);
+            }
+        };
+
+        window.visualize3D = async function() {
+            if (!wasm) return;
+
+            const length = parseFloat(document.getElementById('length2d').value);
+            const width = parseFloat(document.getElementById('width2d').value);
+            const height = parseFloat(document.getElementById('height2d').value);
+            const nx = parseInt(document.getElementById('nx').value);
+            const ny = parseInt(document.getElementById('ny').value);
+            const nz = parseInt(document.getElementById('nz').value);
+
+            try {
+                let heights;
+                if (currentCuts.length > 0) {
+                    const heightsResult = wasm.cuts_to_heights(
+                        JSON.stringify(currentCuts), length, height, nx
+                    );
+                    heights = JSON.parse(heightsResult);
+                } else {
+                    heights = Array(nx).fill(height);
+                }
+
+                const meshJson = wasm.generate_mesh_json(
+                    length, width, JSON.stringify(heights), nx, ny, nz
+                );
+                const mesh = JSON.parse(meshJson);
+
+                visualizeMesh(mesh);
+                showResult('verify-result', 'success', 'Mesh visualized without frequency computation.');
+            } catch (e) {
+                showResult('verify-result', 'error', 'Visualization error: ' + e);
+            }
+        };
+
+        // ========== Full 3D Analysis ==========
         window.checkMemory = function() {
             if (!wasm) return;
 
@@ -263,8 +1144,7 @@
 
         window.run3DAnalysis = async function() {
             if (!wasm) {
-                document.getElementById('result-3d').className = 'result error';
-                document.getElementById('result-3d').textContent = 'WASM not loaded';
+                showResult('result-3d', 'error', 'WASM not loaded');
                 return;
             }
 
@@ -275,40 +1155,84 @@
             const ny = parseInt(document.getElementById('ny').value);
             const nz = parseInt(document.getElementById('nz').value);
             const modes = parseInt(document.getElementById('modes3d').value);
+            const useCuts = document.getElementById('use-cuts-3d').value === 'yes';
 
-            // Uniform heights
-            const heights = JSON.stringify(Array(nx).fill(height));
+            let heights;
+            if (useCuts && currentCuts.length > 0) {
+                const heightsResult = wasm.cuts_to_heights(
+                    JSON.stringify(currentCuts), length, height, nx
+                );
+                heights = JSON.parse(heightsResult);
+            } else {
+                heights = Array(nx).fill(height);
+            }
 
-            const resultEl = document.getElementById('result-3d');
-            resultEl.textContent = 'Computing (this may take a while)...';
+            showResult('result-3d', 'info', 'Computing (this may take a while)...');
 
-            // Use setTimeout to allow UI update
             setTimeout(async () => {
                 try {
                     const start = performance.now();
                     const result = wasm.compute_frequencies_3d(
-                        length, width, heights, nx, ny, nz,
-                        SAPELE.e, SAPELE.nu, SAPELE.rho, modes
+                        length, width, JSON.stringify(heights), nx, ny, nz,
+                        currentMaterial.e, currentMaterial.nu, currentMaterial.rho, modes
                     );
                     const elapsed = performance.now() - start;
 
                     const frequencies = JSON.parse(result);
-                    resultEl.className = 'result success';
-                    resultEl.textContent =
-                        `Computed in ${elapsed.toFixed(1)} ms\n\n` +
-                        `Mesh: ${nx} x ${ny} x ${nz} (${nx * ny * nz} elements)\n` +
-                        `DOF: ${(nx+1) * (ny+1) * (nz+1) * 3}\n\n` +
-                        `Modal Frequencies (Hz):\n` +
-                        frequencies.map((f, i) => `  Mode ${i+1}: ${f.toFixed(2)} Hz`).join('\n');
+                    displayFrequencies('result-3d', 'freq-display-3d', frequencies, elapsed, '3D FEM');
 
                     updateMemoryInfo();
                 } catch (e) {
-                    resultEl.className = 'result error';
-                    resultEl.textContent = 'Error: ' + e;
+                    showResult('result-3d', 'error', 'Error: ' + e);
                 }
             }, 50);
         };
 
+        window.run3DWithViz = async function() {
+            if (!wasm) return;
+
+            const length = parseFloat(document.getElementById('length3d').value);
+            const width = parseFloat(document.getElementById('width3d').value);
+            const height = parseFloat(document.getElementById('height3d').value);
+            const nx = parseInt(document.getElementById('nx').value);
+            const ny = parseInt(document.getElementById('ny').value);
+            const nz = parseInt(document.getElementById('nz').value);
+            const modes = parseInt(document.getElementById('modes3d').value);
+            const useCuts = document.getElementById('use-cuts-3d').value === 'yes';
+
+            let heights;
+            if (useCuts && currentCuts.length > 0) {
+                const heightsResult = wasm.cuts_to_heights(
+                    JSON.stringify(currentCuts), length, height, nx
+                );
+                heights = JSON.parse(heightsResult);
+            } else {
+                heights = Array(nx).fill(height);
+            }
+
+            showResult('result-3d', 'info', 'Computing with visualization...');
+
+            setTimeout(async () => {
+                try {
+                    const start = performance.now();
+                    const result = wasm.compute_3d_with_mesh(
+                        length, width, JSON.stringify(heights), nx, ny, nz,
+                        currentMaterial.e, currentMaterial.nu, currentMaterial.rho, modes
+                    );
+                    const elapsed = performance.now() - start;
+
+                    const data = JSON.parse(result);
+                    displayFrequencies('result-3d', 'freq-display-3d', data.frequencies, elapsed, '3D FEM');
+                    visualizeMesh(data.mesh);
+
+                    updateMemoryInfo();
+                } catch (e) {
+                    showResult('result-3d', 'error', 'Error: ' + e);
+                }
+            }, 50);
+        };
+
+        // ========== Stress Test ==========
         window.runStressTest = async function() {
             if (!wasm) return;
 
@@ -334,7 +1258,7 @@
                     const start = performance.now();
                     const result = wasm.compute_frequencies_3d(
                         0.3, 0.03, heights, nx, ny, nz,
-                        SAPELE.e, SAPELE.nu, SAPELE.rho, 4
+                        currentMaterial.e, currentMaterial.nu, currentMaterial.rho, 4
                     );
                     const elapsed = performance.now() - start;
 
@@ -347,17 +1271,263 @@
                     break;
                 }
 
-                // Small delay to allow GC
                 await new Promise(r => setTimeout(r, 100));
             }
 
             resultEl.textContent += '\n\nStress test complete.';
         };
 
-        // Load WASM on page load
-        loadWasm();
+        // ========== Three.js Visualization ==========
+        function initThreeJS() {
+            const container = document.getElementById('three-container');
 
-        // Update memory periodically
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a2e);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(
+                50,
+                container.clientWidth / container.clientHeight,
+                0.001, 10
+            );
+            camera.position.set(0.4, 0.3, 0.4);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+
+            // Controls
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(1, 1, 1);
+            scene.add(directionalLight);
+
+            const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.5);
+            directionalLight2.position.set(-1, -1, -1);
+            scene.add(directionalLight2);
+
+            // Grid helper
+            const gridHelper = new THREE.GridHelper(1, 20, 0x444444, 0x222222);
+            gridHelper.rotation.x = Math.PI / 2;
+            scene.add(gridHelper);
+
+            // Handle resize
+            window.addEventListener('resize', () => {
+                camera.aspect = container.clientWidth / container.clientHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(container.clientWidth, container.clientHeight);
+            });
+
+            // Animation loop
+            function animate() {
+                requestAnimationFrame(animate);
+                controls.update();
+                renderer.render(scene, camera);
+            }
+            animate();
+        }
+
+        function visualizeMesh(meshData) {
+            // Remove existing mesh
+            if (meshGroup) {
+                scene.remove(meshGroup);
+                meshGroup.traverse(obj => {
+                    if (obj.geometry) obj.geometry.dispose();
+                    if (obj.material) obj.material.dispose();
+                });
+            }
+
+            meshGroup = new THREE.Group();
+
+            const { nodes, elements, element_heights, metadata } = meshData;
+
+            // Find height range for coloring
+            const minHeight = Math.min(...element_heights);
+            const maxHeight = Math.max(...element_heights);
+            const heightRange = maxHeight - minHeight || 1;
+
+            // Create geometry for each element
+            elements.forEach((elem, elemIdx) => {
+                const height = element_heights[elemIdx];
+                const normalizedHeight = (height - minHeight) / heightRange;
+
+                // Color based on height (blue=low, green=mid, red=high)
+                const color = new THREE.Color();
+                if (normalizedHeight < 0.5) {
+                    color.setRGB(0, normalizedHeight * 2, 1 - normalizedHeight * 2);
+                } else {
+                    color.setRGB((normalizedHeight - 0.5) * 2, 1 - (normalizedHeight - 0.5) * 2, 0);
+                }
+
+                // Get node positions for this hex8 element
+                const nodeIndices = elem.nodes;
+                const positions = nodeIndices.map(idx => {
+                    const n = nodes[idx];
+                    return new THREE.Vector3(n.x, n.y, n.z);
+                });
+
+                // Create hex8 faces (6 faces, each as 2 triangles)
+                // Node ordering: bottom face (0,1,2,3), top face (4,5,6,7)
+                const faceIndices = [
+                    [0, 3, 2, 1], // bottom
+                    [4, 5, 6, 7], // top
+                    [0, 1, 5, 4], // front
+                    [2, 3, 7, 6], // back
+                    [0, 4, 7, 3], // left
+                    [1, 2, 6, 5], // right
+                ];
+
+                const geometry = new THREE.BufferGeometry();
+                const vertices = [];
+                const normals = [];
+
+                faceIndices.forEach(face => {
+                    const p0 = positions[face[0]];
+                    const p1 = positions[face[1]];
+                    const p2 = positions[face[2]];
+                    const p3 = positions[face[3]];
+
+                    // Calculate face normal
+                    const v1 = new THREE.Vector3().subVectors(p1, p0);
+                    const v2 = new THREE.Vector3().subVectors(p2, p0);
+                    const normal = new THREE.Vector3().crossVectors(v1, v2).normalize();
+
+                    // Two triangles per face
+                    vertices.push(
+                        p0.x, p0.y, p0.z,
+                        p1.x, p1.y, p1.z,
+                        p2.x, p2.y, p2.z,
+                        p0.x, p0.y, p0.z,
+                        p2.x, p2.y, p2.z,
+                        p3.x, p3.y, p3.z
+                    );
+
+                    for (let i = 0; i < 6; i++) {
+                        normals.push(normal.x, normal.y, normal.z);
+                    }
+                });
+
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+                geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+
+                const material = new THREE.MeshPhongMaterial({
+                    color: color,
+                    side: THREE.DoubleSide,
+                    flatShading: true
+                });
+
+                const mesh = new THREE.Mesh(geometry, material);
+                meshGroup.add(mesh);
+
+                // Add wireframe
+                const wireframeGeom = new THREE.EdgesGeometry(geometry);
+                const wireframeMat = new THREE.LineBasicMaterial({
+                    color: 0x000000,
+                    linewidth: 1,
+                    visible: wireframeVisible
+                });
+                const wireframe = new THREE.LineSegments(wireframeGeom, wireframeMat);
+                wireframe.name = 'wireframe';
+                mesh.add(wireframe);
+            });
+
+            // Center the mesh
+            const center = new THREE.Vector3(
+                (metadata.bbox_min[0] + metadata.bbox_max[0]) / 2,
+                (metadata.bbox_min[1] + metadata.bbox_max[1]) / 2,
+                (metadata.bbox_min[2] + metadata.bbox_max[2]) / 2
+            );
+            meshGroup.position.sub(center);
+
+            scene.add(meshGroup);
+
+            // Update camera to view mesh
+            const size = Math.max(
+                metadata.bbox_max[0] - metadata.bbox_min[0],
+                metadata.bbox_max[1] - metadata.bbox_min[1],
+                metadata.bbox_max[2] - metadata.bbox_min[2]
+            );
+            camera.position.set(size * 1.5, size, size * 1.5);
+            controls.target.set(0, 0, 0);
+            controls.update();
+
+            // Update mesh info
+            document.getElementById('mesh-info').className = 'result success';
+            document.getElementById('mesh-info').textContent =
+                `Mesh visualized:\n` +
+                `  Nodes: ${metadata.num_nodes}\n` +
+                `  Elements: ${metadata.num_elements}\n` +
+                `  DOF: ${metadata.num_dof}\n` +
+                `  Height range: ${(minHeight * 1000).toFixed(1)} - ${(maxHeight * 1000).toFixed(1)} mm`;
+
+            document.getElementById('three-info').textContent =
+                `${metadata.num_elements} elements • Drag to rotate • Scroll to zoom`;
+        }
+
+        window.resetCamera = function() {
+            camera.position.set(0.4, 0.3, 0.4);
+            controls.target.set(0, 0, 0);
+            controls.update();
+        };
+
+        window.toggleWireframe = function() {
+            wireframeVisible = !wireframeVisible;
+            if (meshGroup) {
+                meshGroup.traverse(obj => {
+                    if (obj.name === 'wireframe') {
+                        obj.visible = wireframeVisible;
+                    }
+                });
+            }
+        };
+
+        window.toggleAxes = function() {
+            if (axesHelper) {
+                scene.remove(axesHelper);
+                axesHelper = null;
+            } else {
+                axesHelper = new THREE.AxesHelper(0.1);
+                scene.add(axesHelper);
+            }
+        };
+
+        // ========== Utility Functions ==========
+        function showResult(elementId, type, message) {
+            const el = document.getElementById(elementId);
+            el.className = `result ${type}`;
+            el.textContent = message;
+        }
+
+        function displayFrequencies(resultId, gridId, frequencies, elapsed, label) {
+            const resultEl = document.getElementById(resultId);
+            const gridEl = document.getElementById(gridId);
+
+            resultEl.className = 'result success';
+            resultEl.textContent = `${label} - Computed in ${elapsed.toFixed(1)} ms`;
+
+            gridEl.style.display = 'grid';
+            gridEl.innerHTML = frequencies.map((f, i) => `
+                <div class="freq-card">
+                    <div class="freq-label">Mode ${i+1}</div>
+                    <div class="freq-value">${f.toFixed(1)} <span class="freq-unit">Hz</span></div>
+                </div>
+            `).join('');
+        }
+
+        // Initialize on load
+        init();
+
+        // Periodic memory update
         setInterval(updateMemoryInfo, 2000);
     </script>
 </body>
