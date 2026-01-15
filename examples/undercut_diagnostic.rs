@@ -1,5 +1,5 @@
 use fem3d_rust_2::{
-    compute_global_matrices_dense, generate_bar_mesh_3d, generate_bar_mesh_3d_adaptive,
+    compute_global_matrices_dense, generate_bar_mesh_3d, generate_bar_mesh_3d_adaptive, Material,
 };
 use nalgebra::{Matrix3, SMatrix};
 
@@ -172,7 +172,8 @@ fn main() {
 
     // Test 5: Check matrix conditioning
     println!("Test 5: Check matrix properties for abrupt undercut");
-    let (k, m) = compute_global_matrices_dense(&mesh, 12.0e9, 0.35, 640.0);
+    let sapele = Material::sapele();
+    let (k, m) = compute_global_matrices_dense(&mesh, sapele.e, sapele.nu, sapele.rho);
 
     let k_diag_sum: f64 = (0..k.nrows()).map(|i| k[(i, i)]).sum();
     let m_diag_sum: f64 = (0..m.nrows()).map(|i| m[(i, i)]).sum();

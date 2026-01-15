@@ -1,5 +1,5 @@
 use fem3d_rust_2::{
-    compute_modal_frequencies, compute_modal_frequencies_sparse, generate_bar_mesh_3d,
+    compute_modal_frequencies, compute_modal_frequencies_sparse, generate_bar_mesh_3d, Material,
 };
 use std::time::Instant;
 
@@ -9,9 +9,6 @@ use fem3d_rust_2::compute_modal_frequencies_sprs;
 const LENGTH_M: f64 = 0.551;
 const WIDTH_M: f64 = 0.032;
 const THICKNESS_M: f64 = 0.024;
-const YOUNG: f64 = 12.0e9;
-const POISSON: f64 = 0.35;
-const DENSITY: f64 = 640.0;
 const NUM_MODES: usize = 4;
 
 struct BenchResult {
@@ -20,7 +17,7 @@ struct BenchResult {
     freqs: Vec<f64>,
 }
 
-fn benchmark_dense(mesh: &fem3d_rust_2::Mesh3d) -> Option<BenchResult> {
+fn benchmark_dense(mesh: &fem3d_rust_2::Mesh3d, material: &Material) -> Option<BenchResult> {
     let dof = mesh.nodes.len() * 3;
 
     // Skip dense for very large problems (would take too long)
@@ -29,7 +26,7 @@ fn benchmark_dense(mesh: &fem3d_rust_2::Mesh3d) -> Option<BenchResult> {
     }
 
     let start = Instant::now();
-    let freqs = compute_modal_frequencies(mesh, YOUNG, POISSON, DENSITY, NUM_MODES);
+    let freqs = compute_modal_frequencies(mesh, material.e, material.nu, material.rho, NUM_MODES);
     let elapsed = start.elapsed();
 
     Some(BenchResult {
@@ -39,9 +36,10 @@ fn benchmark_dense(mesh: &fem3d_rust_2::Mesh3d) -> Option<BenchResult> {
     })
 }
 
-fn benchmark_sparse_nalgebra(mesh: &fem3d_rust_2::Mesh3d) -> BenchResult {
+fn benchmark_sparse_nalgebra(mesh: &fem3d_rust_2::Mesh3d, material: &Material) -> BenchResult {
     let start = Instant::now();
-    let freqs = compute_modal_frequencies_sparse(mesh, YOUNG, POISSON, DENSITY, NUM_MODES);
+    let freqs =
+        compute_modal_frequencies_sparse(mesh, material.e, material.nu, material.rho, NUM_MODES);
     let elapsed = start.elapsed();
 
     BenchResult {
@@ -52,9 +50,10 @@ fn benchmark_sparse_nalgebra(mesh: &fem3d_rust_2::Mesh3d) -> BenchResult {
 }
 
 #[cfg(feature = "sprs-backend")]
-fn benchmark_sparse_sprs(mesh: &fem3d_rust_2::Mesh3d) -> BenchResult {
+fn benchmark_sparse_sprs(mesh: &fem3d_rust_2::Mesh3d, material: &Material) -> BenchResult {
     let start = Instant::now();
-    let freqs = compute_modal_frequencies_sprs(mesh, YOUNG, POISSON, DENSITY, NUM_MODES);
+    let freqs =
+        compute_modal_frequencies_sprs(mesh, material.e, material.nu, material.rho, NUM_MODES);
     let elapsed = start.elapsed();
 
     BenchResult {
@@ -72,11 +71,19 @@ fn format_freq(f: Option<&f64>) -> String {
 }
 
 fn main() {
+    let sapele = Material::sapele();
+
     println!("╔══════════════════════════════════════════════════════════════════════════════╗");
     println!("║                    FEM Solver Benchmark Comparison                           ║");
     println!("╠══════════════════════════════════════════════════════════════════════════════╣");
-    println!("║ Sapele bar: {}m x {}m x {}m                                      ║", LENGTH_M, WIDTH_M, THICKNESS_M);
-    println!("║ E={:.0e} Pa, ν={}, ρ={} kg/m³                                    ║", YOUNG, POISSON, DENSITY);
+    println!(
+        "║ {} bar: {}m x {}m x {}m                                      ║",
+        sapele.name, LENGTH_M, WIDTH_M, THICKNESS_M
+    );
+    println!(
+        "║ E={:.0e} Pa, ν={}, ρ={} kg/m³                                    ║",
+        sapele.e, sapele.nu, sapele.rho
+    );
     println!("╚══════════════════════════════════════════════════════════════════════════════╝");
     println!();
 
@@ -104,16 +111,16 @@ fn main() {
         let mut results: Vec<BenchResult> = Vec::new();
 
         // Dense benchmark
-        if let Some(result) = benchmark_dense(&mesh) {
+        if let Some(result) = benchmark_dense(&mesh, &sapele) {
             results.push(result);
         }
 
         // Sparse (nalgebra) benchmark
-        results.push(benchmark_sparse_nalgebra(&mesh));
+        results.push(benchmark_sparse_nalgebra(&mesh, &sapele));
 
         // Sparse (sprs) benchmark
         #[cfg(feature = "sprs-backend")]
-        results.push(benchmark_sparse_sprs(&mesh));
+        results.push(benchmark_sparse_sprs(&mesh, &sapele));
 
         // Print results for this mesh size
         for (i, result) in results.iter().enumerate() {
@@ -164,11 +171,11 @@ fn main() {
         let mesh = generate_bar_mesh_3d(LENGTH_M, WIDTH_M, &heights, nx, ny, nz);
         let dof = mesh.nodes.len() * 3;
 
-        if let Some(result) = benchmark_dense(&mesh) {
+        if let Some(result) = benchmark_dense(&mesh, &sapele) {
             dense_times.push((dof, result.time_ms));
         }
 
-        let sparse_result = benchmark_sparse_nalgebra(&mesh);
+        let sparse_result = benchmark_sparse_nalgebra(&mesh, &sapele);
         sparse_times.push((dof, sparse_result.time_ms));
     }
 

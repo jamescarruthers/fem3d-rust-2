@@ -13,7 +13,7 @@
 use fem3d_rust_2::{
     compute_height, compute_modal_frequencies_with_solver, cuts_to_genes, genes_to_cuts,
     generate_adaptive_mesh_1d, generate_bar_mesh_3d, generate_bar_mesh_3d_adaptive,
-    generate_element_heights, Cut, EigenSolver,
+    generate_element_heights, Cut, EigenSolver, Material,
 };
 
 fn main() {
@@ -25,14 +25,13 @@ fn main() {
     let h0 = 0.024; // 24 mm original thickness
 
     // Material properties (Sapele wood)
-    let e = 12.0e9; // Young's modulus (Pa)
-    let rho = 640.0; // Density (kg/m³)
-    let nu = 0.35; // Poisson's ratio
+    let sapele = Material::sapele();
 
     println!("Bar dimensions:");
     println!("  Length: {:.0} mm", length * 1000.0);
     println!("  Width: {:.0} mm", width * 1000.0);
-    println!("  Original thickness: {:.1} mm\n", h0 * 1000.0);
+    println!("  Original thickness: {:.1} mm", h0 * 1000.0);
+    println!("  Material: {}\n", sapele.name);
 
     // Example 1: Simple single cut
     println!("Example 1: Single symmetric cut");
@@ -69,9 +68,9 @@ fn main() {
 
     let freqs_simple = compute_modal_frequencies_with_solver(
         &mesh_simple,
-        e,
-        nu,
-        rho,
+        sapele.e,
+        sapele.nu,
+        sapele.rho,
         4,
         EigenSolver::Auto,
     );
@@ -123,9 +122,9 @@ fn main() {
 
     let freqs_nested = compute_modal_frequencies_with_solver(
         &mesh_nested,
-        e,
-        nu,
-        rho,
+        sapele.e,
+        sapele.nu,
+        sapele.rho,
         4,
         EigenSolver::Auto,
     );
@@ -267,9 +266,9 @@ fn main() {
     // Compute frequencies with adaptive mesh
     let freqs_adaptive = compute_modal_frequencies_with_solver(
         &adaptive_mesh,
-        e,
-        nu,
-        rho,
+        sapele.e,
+        sapele.nu,
+        sapele.rho,
         4,
         EigenSolver::Auto,
     );
