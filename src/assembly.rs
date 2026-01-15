@@ -10,18 +10,23 @@ use nalgebra_sparse::{CooMatrix, CsrMatrix};
 use sprs::{CsMat, TriMat};
 
 /// Simple sparse assembly using 3 DOF per node.
+/// Uses stack-allocated DOF map for better performance.
 pub fn assemble_global_sparse(
     num_dofs: usize,
     elements: &[[usize; 8]],
     element_matrices: &[SMatrix<f64, 24, 24>],
 ) -> CsrMatrix<f64> {
     let mut coo = CooMatrix::new(num_dofs, num_dofs);
+    // Stack-allocated DOF map - avoids heap allocation per element
+    let mut dof_map = [0usize; 24];
 
     for (elem_idx, nodes) in elements.iter().enumerate() {
-        let dof_map: Vec<usize> = nodes
-            .iter()
-            .flat_map(|n| [3 * n, 3 * n + 1, 3 * n + 2])
-            .collect();
+        // Fill DOF map in-place
+        for (i, &n) in nodes.iter().enumerate() {
+            dof_map[3 * i] = 3 * n;
+            dof_map[3 * i + 1] = 3 * n + 1;
+            dof_map[3 * i + 2] = 3 * n + 2;
+        }
         let local = &element_matrices[elem_idx];
 
         for i in 0..24 {
@@ -38,18 +43,23 @@ pub fn assemble_global_sparse(
 }
 
 /// Dense assembly variant used for small test problems.
+/// Uses stack-allocated DOF map for better performance.
 pub fn assemble_global_dense(
     num_dofs: usize,
     elements: &[[usize; 8]],
     element_matrices: &[SMatrix<f64, 24, 24>],
 ) -> DMatrix<f64> {
     let mut mat = DMatrix::<f64>::zeros(num_dofs, num_dofs);
+    // Stack-allocated DOF map - avoids heap allocation per element
+    let mut dof_map = [0usize; 24];
 
     for (elem_idx, nodes) in elements.iter().enumerate() {
-        let dof_map: Vec<usize> = nodes
-            .iter()
-            .flat_map(|n| [3 * n, 3 * n + 1, 3 * n + 2])
-            .collect();
+        // Fill DOF map in-place
+        for (i, &n) in nodes.iter().enumerate() {
+            dof_map[3 * i] = 3 * n;
+            dof_map[3 * i + 1] = 3 * n + 1;
+            dof_map[3 * i + 2] = 3 * n + 2;
+        }
         let local = &element_matrices[elem_idx];
 
         for i in 0..24 {
@@ -66,6 +76,7 @@ pub fn assemble_global_dense(
 }
 
 /// Assemble global matrix using sprs triplet format.
+/// Uses stack-allocated DOF map for better performance.
 #[cfg(feature = "sprs-backend")]
 pub fn assemble_global_sprs(
     num_dofs: usize,
@@ -73,12 +84,16 @@ pub fn assemble_global_sprs(
     element_matrices: &[SMatrix<f64, 24, 24>],
 ) -> CsMat<f64> {
     let mut tri = TriMat::new((num_dofs, num_dofs));
+    // Stack-allocated DOF map - avoids heap allocation per element
+    let mut dof_map = [0usize; 24];
 
     for (elem_idx, nodes) in elements.iter().enumerate() {
-        let dof_map: Vec<usize> = nodes
-            .iter()
-            .flat_map(|n| [3 * n, 3 * n + 1, 3 * n + 2])
-            .collect();
+        // Fill DOF map in-place
+        for (i, &n) in nodes.iter().enumerate() {
+            dof_map[3 * i] = 3 * n;
+            dof_map[3 * i + 1] = 3 * n + 1;
+            dof_map[3 * i + 2] = 3 * n + 2;
+        }
         let local = &element_matrices[elem_idx];
 
         for i in 0..24 {

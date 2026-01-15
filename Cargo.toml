@@ -36,3 +36,22 @@ wasm-opt = false
 
 [package.metadata.wasm-pack.profile.dev]
 wasm-opt = false
+
+# Release profile optimizations for maximum performance
+[profile.release]
+lto = true              # Link-time optimization for better inlining across crates
+codegen-units = 1       # Single codegen unit for better optimization
+opt-level = 3           # Maximum optimization level
+panic = "abort"         # Smaller code, no unwinding overhead
+
+# Optimize dependencies in release builds
+[profile.release.package."*"]
+opt-level = 3
+
+# Development profile with some optimizations for faster iteration
+[profile.dev]
+opt-level = 1           # Basic optimizations for reasonable dev performance
+
+# Bench profile inherits from release but allows debugging
+[profile.bench]
+debug = true
