@@ -1058,10 +1058,13 @@
                 document.getElementById('step3-num').classList.remove('active');
                 document.getElementById('step3-num').classList.add('done');
 
+                // Get vertical bending modes only (these are what we tune for marimba bars)
+                const bendingFreqs = getVerticalBendingFrequencies(data);
+
                 // Display results
                 let resultText = `3D FEM Verification (${elapsed.toFixed(0)} ms)\n\n`;
                 resultText += `Mesh: ${nx}x${ny}x${nz} (${data.mesh.metadata.num_elements} elements, ${data.mesh.metadata.num_dof} DOF)\n\n`;
-                resultText += `Frequencies:\n`;
+                resultText += `Vertical Bending Modes (Soares Classification):\n`;
 
                 const f1 = parseFloat(document.getElementById('target-f1').value);
                 const r2 = parseFloat(document.getElementById('target-ratio2').value);
@@ -1069,11 +1072,19 @@
                 const r4 = parseFloat(document.getElementById('target-ratio4').value);
                 const targets = [f1, f1 * r2, f1 * r3, f1 * r4];
 
-                data.frequencies.forEach((f, i) => {
+                bendingFreqs.forEach((f, i) => {
                     const target = targets[i] || 0;
                     const errorCents = target > 0 ? 1200 * Math.log2(f / target) : 0;
-                    resultText += `  f${i+1}: ${f.toFixed(1)} Hz (target: ${target.toFixed(1)} Hz, error: ${errorCents.toFixed(0)} cents)\n`;
+                    resultText += `  V${i+1}: ${f.toFixed(1)} Hz (target: ${target.toFixed(1)} Hz, error: ${errorCents.toFixed(0)} cents)\n`;
                 });
+
+                // Show other mode counts
+                const torsional = (data.classified.torsional || []).length;
+                const lateral = (data.classified.lateral || []).length;
+                const axial = (data.classified.axial || []).length;
+                if (torsional + lateral + axial > 0) {
+                    resultText += `\n(Filtered out: ${torsional} torsional, ${lateral} lateral, ${axial} axial modes)`;
+                }
 
                 showResult('verify-result', 'success', resultText);
 
@@ -1178,8 +1189,8 @@
                     );
                     const elapsed = performance.now() - start;
 
-                    const frequencies = JSON.parse(result);
-                    displayFrequencies('result-3d', 'freq-display-3d', frequencies, elapsed, '3D FEM');
+                    const data = JSON.parse(result);
+                    displayClassifiedModes('result-3d', 'freq-display-3d', data, elapsed, '3D FEM (Vertical Bending)');
 
                     updateMemoryInfo();
                 } catch (e) {
@@ -1222,7 +1233,7 @@
                     const elapsed = performance.now() - start;
 
                     const data = JSON.parse(result);
-                    displayFrequencies('result-3d', 'freq-display-3d', data.frequencies, elapsed, '3D FEM');
+                    displayClassifiedModes('result-3d', 'freq-display-3d', data, elapsed, '3D FEM (Vertical Bending)');
                     visualizeMesh(data.mesh);
 
                     updateMemoryInfo();
@@ -1262,8 +1273,10 @@
                     );
                     const elapsed = performance.now() - start;
 
-                    const freqs = JSON.parse(result);
-                    resultEl.textContent += `OK (${elapsed.toFixed(0)} ms, f1=${freqs[0].toFixed(1)} Hz)`;
+                    const data = JSON.parse(result);
+                    const bendingFreqs = getVerticalBendingFrequencies(data);
+                    const v1 = bendingFreqs.length > 0 ? bendingFreqs[0].toFixed(1) : 'N/A';
+                    resultEl.textContent += `OK (${elapsed.toFixed(0)} ms, V1=${v1} Hz)`;
                     updateMemoryInfo();
                 } catch (e) {
                     resultEl.textContent += `FAILED: ${e}`;
@@ -1522,6 +1535,43 @@
                     <div class="freq-value">${f.toFixed(1)} <span class="freq-unit">Hz</span></div>
                 </div>
             `).join('');
+        }
+
+        // Display classified modes (Soares method) - shows only vertical bending modes
+        function displayClassifiedModes(resultId, gridId, data, elapsed, label) {
+            const resultEl = document.getElementById(resultId);
+            const gridEl = document.getElementById(gridId);
+
+            // Extract vertical bending modes (sorted by frequency/family_rank)
+            const bendingModes = data.classified.vertical_bending || [];
+            bendingModes.sort((a, b) => a.family_rank - b.family_rank);
+
+            resultEl.className = 'result success';
+            let infoText = `${label} - Computed in ${elapsed.toFixed(1)} ms`;
+
+            // Show classification summary
+            const torsional = (data.classified.torsional || []).length;
+            const lateral = (data.classified.lateral || []).length;
+            const axial = (data.classified.axial || []).length;
+            if (torsional + lateral + axial > 0) {
+                infoText += `\n(Filtered: ${torsional} torsional, ${lateral} lateral, ${axial} axial)`;
+            }
+            resultEl.textContent = infoText;
+
+            gridEl.style.display = 'grid';
+            gridEl.innerHTML = bendingModes.map(mode => `
+                <div class="freq-card">
+                    <div class="freq-label">V${mode.family_rank}</div>
+                    <div class="freq-value">${mode.frequency.toFixed(1)} <span class="freq-unit">Hz</span></div>
+                </div>
+            `).join('');
+        }
+
+        // Get vertical bending frequencies from classified data
+        function getVerticalBendingFrequencies(data) {
+            const modes = data.classified.vertical_bending || [];
+            modes.sort((a, b) => a.family_rank - b.family_rank);
+            return modes.map(m => m.frequency);
         }
 
         // Initialize on load
