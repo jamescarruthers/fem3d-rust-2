@@ -15,8 +15,8 @@ use wasm_bindgen_test::*;
 wasm_bindgen_test_configure!(run_in_browser);
 
 use fem3d_rust_2::{
-    generate_bar_mesh_3d, compute_modal_frequencies,
-    compute_modal_frequencies_2d_from_cuts, Cut,
+    compute_modal_frequencies, compute_modal_frequencies_2d_from_cuts, generate_bar_mesh_3d, Cut,
+    Material,
 };
 
 /// Test basic mesh generation in WASM - small mesh for memory constraints.
@@ -53,12 +53,10 @@ fn test_modal_analysis_minimal() {
     let mesh = generate_bar_mesh_3d(length, width, &heights, nx, ny, nz);
 
     // Sapele material properties
-    let e = 10.0e9;
-    let nu = 0.35;
-    let rho = 640.0;
+    let sapele = Material::sapele();
     let num_modes = 4;
 
-    let frequencies = compute_modal_frequencies(&mesh, e, nu, rho, num_modes);
+    let frequencies = compute_modal_frequencies(&mesh, sapele.e, sapele.nu, sapele.rho, num_modes);
 
     assert_eq!(frequencies.len(), num_modes, "Should return requested number of modes");
     assert!(frequencies[0] > 0.0, "First frequency should be positive");
@@ -79,14 +77,12 @@ fn test_2d_beam_solver() {
     let length = 0.5;
     let width = 0.03;
     let height = 0.024;
-    let e = 10.0e9;
-    let nu = 0.35;
-    let rho = 640.0;
+    let sapele = Material::sapele();
     let elements = 50;
     let modes = 4;
 
     let frequencies = compute_modal_frequencies_2d_from_cuts(
-        &cuts, length, width, height, e, nu, rho, elements, modes,
+        &cuts, length, width, height, sapele.e, sapele.nu, sapele.rho, elements, modes,
     );
 
     assert_eq!(frequencies.len(), modes);
@@ -133,11 +129,9 @@ fn test_moderate_mesh_memory() {
     assert_eq!(mesh.elements.len(), 180);
 
     // Run modal analysis on moderate mesh
-    let e = 10.0e9;
-    let nu = 0.35;
-    let rho = 640.0;
+    let sapele = Material::sapele();
 
-    let frequencies = compute_modal_frequencies(&mesh, e, nu, rho, 4);
+    let frequencies = compute_modal_frequencies(&mesh, sapele.e, sapele.nu, sapele.rho, 4);
     assert_eq!(frequencies.len(), 4);
 }
 

@@ -38,6 +38,7 @@
 
 pub mod algorithm;
 pub mod crossover;
+pub mod materials;
 pub mod mutation;
 pub mod objective;
 pub mod population;
@@ -70,6 +71,10 @@ pub use selection::{
 };
 pub use types::{
     AnalysisMode, BarParameters, BoundsConstraints, CrossoverMethod, DetailedEvaluation,
-    EAParameters, Individual, Material, MutationMethod, OptimizationResult, PenaltyType,
-    PopulationStats, ProgressUpdate, SelectionMethod, VariableBounds,
+    EAParameters, Individual, Material, MaterialCategory, MutationMethod, OptimizationResult,
+    PenaltyType, PopulationStats, ProgressUpdate, SelectionMethod, VariableBounds,
+};
+pub use materials::{
+    calculate_shear_modulus, get_all_materials, get_material, get_materials_by_category,
+    KAPPA, MATERIAL_KEYS,
 };

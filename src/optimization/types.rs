@@ -12,6 +12,15 @@ pub enum AnalysisMode {
     Solid3D,
 }
 
+/// Material category.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MaterialCategory {
+    /// Metals (aluminum, steel, brass, bronze, etc.)
+    Metal,
+    /// Woods (rosewood, sapele, maple, etc.)
+    Wood,
+}
+
 /// Material properties for bar tuning.
 #[derive(Debug, Clone)]
 pub struct Material {
@@ -22,31 +31,134 @@ pub struct Material {
     pub rho: f64,
     /// Poisson's ratio
     pub nu: f64,
+    /// Material category
+    pub category: MaterialCategory,
 }
 
 impl Material {
-    pub fn new(name: impl Into<String>, e: f64, rho: f64, nu: f64) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        e: f64,
+        rho: f64,
+        nu: f64,
+        category: MaterialCategory,
+    ) -> Self {
         Self {
             name: name.into(),
             e,
             rho,
             nu,
+            category,
         }
     }
 
-    /// Sapele wood - commonly used for marimbas
-    pub fn sapele() -> Self {
-        Self::new("Sapele", 12.0e9, 640.0, 0.35)
-    }
+    // ========== METALS ==========
 
-    /// Aluminum 6061
+    /// Aluminum 6061 - common vibraphone/glockenspiel material
     pub fn aluminum() -> Self {
-        Self::new("Aluminum 6061", 68.9e9, 2700.0, 0.33)
+        Self::new("Aluminum 6061", 68.9e9, 2700.0, 0.33, MaterialCategory::Metal)
     }
 
-    /// Rosewood - premium marimba tonewood
+    /// Aluminum 7075 - higher strength aluminum alloy
+    pub fn aluminum7075() -> Self {
+        Self::new("Aluminum 7075", 71.7e9, 2810.0, 0.33, MaterialCategory::Metal)
+    }
+
+    /// Brass C260 - cartridge brass
+    pub fn brass() -> Self {
+        Self::new("Brass C260", 110.0e9, 8530.0, 0.35, MaterialCategory::Metal)
+    }
+
+    /// Steel 1018 - low carbon steel
+    pub fn steel() -> Self {
+        Self::new("Steel 1018", 205.0e9, 7870.0, 0.29, MaterialCategory::Metal)
+    }
+
+    /// Stainless Steel 304
+    pub fn stainless_steel() -> Self {
+        Self::new("Stainless Steel 304", 193.0e9, 8000.0, 0.29, MaterialCategory::Metal)
+    }
+
+    /// Phosphor Bronze
+    pub fn bronze() -> Self {
+        Self::new("Phosphor Bronze", 110.0e9, 8800.0, 0.34, MaterialCategory::Metal)
+    }
+
+    /// Bell Bronze (B20) - traditional cymbal/bell alloy
+    pub fn bell_bronze() -> Self {
+        Self::new("Bell Bronze (B20)", 100.0e9, 8600.0, 0.34, MaterialCategory::Metal)
+    }
+
+    /// Fiberglass Composite - synthetic alternative
+    pub fn fiberglass() -> Self {
+        Self::new("Fiberglass Composite", 17.0e9, 1800.0, 0.30, MaterialCategory::Metal)
+    }
+
+    // ========== WOODS ==========
+
+    /// Honduran Rosewood - premium marimba tonewood
     pub fn rosewood() -> Self {
-        Self::new("Honduran Rosewood", 12.5e9, 850.0, 0.37)
+        Self::new("Honduran Rosewood", 12.5e9, 850.0, 0.37, MaterialCategory::Wood)
+    }
+
+    /// African Rosewood (Bubinga)
+    pub fn african_rosewood() -> Self {
+        Self::new("African Rosewood (Bubinga)", 15.8e9, 890.0, 0.36, MaterialCategory::Wood)
+    }
+
+    /// African Padauk
+    pub fn padauk() -> Self {
+        Self::new("African Padauk", 11.7e9, 750.0, 0.35, MaterialCategory::Wood)
+    }
+
+    /// Sapele - commonly used for marimbas
+    pub fn sapele() -> Self {
+        Self::new("Sapele", 12.0e9, 640.0, 0.35, MaterialCategory::Wood)
+    }
+
+    /// Bubinga
+    pub fn bubinga() -> Self {
+        Self::new("Bubinga", 15.8e9, 890.0, 0.36, MaterialCategory::Wood)
+    }
+
+    /// Hard Maple
+    pub fn maple() -> Self {
+        Self::new("Hard Maple", 12.6e9, 705.0, 0.35, MaterialCategory::Wood)
+    }
+
+    /// Purpleheart
+    pub fn purpleheart() -> Self {
+        Self::new("Purpleheart", 17.0e9, 880.0, 0.35, MaterialCategory::Wood)
+    }
+
+    /// Wenge
+    pub fn wenge() -> Self {
+        Self::new("Wenge", 14.0e9, 870.0, 0.35, MaterialCategory::Wood)
+    }
+
+    /// Bocote
+    pub fn bocote() -> Self {
+        Self::new("Bocote", 14.1e9, 930.0, 0.36, MaterialCategory::Wood)
+    }
+
+    /// Zebrawood
+    pub fn zebrawood() -> Self {
+        Self::new("Zebrawood", 15.2e9, 780.0, 0.35, MaterialCategory::Wood)
+    }
+
+    /// Cocobolo
+    pub fn cocobolo() -> Self {
+        Self::new("Cocobolo", 14.1e9, 1100.0, 0.36, MaterialCategory::Wood)
+    }
+
+    /// African Ebony
+    pub fn ebony() -> Self {
+        Self::new("African Ebony", 17.4e9, 1050.0, 0.38, MaterialCategory::Wood)
+    }
+
+    /// Teak
+    pub fn teak() -> Self {
+        Self::new("Teak", 12.3e9, 630.0, 0.35, MaterialCategory::Wood)
     }
 }
 

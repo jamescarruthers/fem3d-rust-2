@@ -1,4 +1,4 @@
-use fem3d_rust_2::{compute_modal_frequencies, generate_bar_mesh_3d, LAMBDA_TOL};
+use fem3d_rust_2::{compute_modal_frequencies, generate_bar_mesh_3d, Material, LAMBDA_TOL};
 use std::env;
 
 /// Parse mesh divisions from environment variables or use defaults.
@@ -32,9 +32,8 @@ fn sapele_bar_modal_frequencies_are_positive_and_sorted() {
     const WIDTH_M: f64 = 0.032; // 32 mm
     const THICKNESS_M: f64 = 0.024; // 24 mm
     const MAX_REASONABLE_FREQ_HZ: f64 = 1.0e6;
-    const YOUNG_SAPELE: f64 = 12.0e9;
-    const POISSON_SAPELE: f64 = 0.35;
-    const DENSITY_SAPELE: f64 = 640.0;
+
+    let sapele = Material::sapele();
 
     let (nx, ny, nz) = get_mesh_divisions();
     let heights: Vec<f64> = vec![THICKNESS_M; nx];
@@ -48,7 +47,7 @@ fn sapele_bar_modal_frequencies_are_positive_and_sorted() {
         nx, ny, nz, num_elements, mesh.nodes.len(), num_dof
     );
 
-    let freqs = compute_modal_frequencies(&mesh, YOUNG_SAPELE, POISSON_SAPELE, DENSITY_SAPELE, 4);
+    let freqs = compute_modal_frequencies(&mesh, sapele.e, sapele.nu, sapele.rho, 4);
     println!("Sapele bar frequencies (Hz): {:?}", freqs);
 
     // Analytical first bending mode ~352 Hz for this bar
@@ -75,10 +74,9 @@ fn sapele_bar_frequency_converges_with_mesh_refinement() {
     const LENGTH_M: f64 = 0.551;
     const WIDTH_M: f64 = 0.032;
     const THICKNESS_M: f64 = 0.024;
-    const YOUNG_SAPELE: f64 = 12.0e9;
-    const POISSON_SAPELE: f64 = 0.35;
-    const DENSITY_SAPELE: f64 = 640.0;
     const ANALYTICAL_F1: f64 = 352.3; // Euler-Bernoulli first bending mode
+
+    let sapele = Material::sapele();
 
     println!("Testing mesh convergence toward analytical f1 = {:.1} Hz\n", ANALYTICAL_F1);
 
@@ -95,7 +93,7 @@ fn sapele_bar_frequency_converges_with_mesh_refinement() {
         let mesh = generate_bar_mesh_3d(LENGTH_M, WIDTH_M, &heights, nx, ny, nz);
         let num_dof = mesh.nodes.len() * 3;
 
-        let freqs = compute_modal_frequencies(&mesh, YOUNG_SAPELE, POISSON_SAPELE, DENSITY_SAPELE, 1);
+        let freqs = compute_modal_frequencies(&mesh, sapele.e, sapele.nu, sapele.rho, 1);
 
         if let Some(f1) = freqs.first() {
             let error_pct = ((f1 - ANALYTICAL_F1) / ANALYTICAL_F1 * 100.0).abs();
