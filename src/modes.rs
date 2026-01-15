@@ -180,4 +180,84 @@ mod tests {
         assert_eq!(families[&ModeType::Lateral][0].2, 1);
         assert_eq!(families[&ModeType::Axial][0].2, 1);
     }
+
+    #[test]
+    fn classification_with_real_mesh_frequencies_and_shapes() {
+        use crate::mesh::generate_bar_mesh_3d;
+        use crate::solver::compute_modal_frequencies_with_shapes;
+
+        // Create a bar mesh with enough elements for modal analysis
+        let heights: Vec<f64> = vec![0.024; 10]; // 10 elements along length
+        let mesh = generate_bar_mesh_3d(0.2, 0.03, &heights, 10, 2, 2);
+
+        // Compute frequencies and mode shapes
+        let (freqs, mode_shapes) = compute_modal_frequencies_with_shapes(
+            &mesh,
+            12e9,  // Young's modulus (Pa) - wood-like
+            0.35,  // Poisson's ratio
+            640.0, // Density (kg/m³)
+            8,     // Request 8 modes
+        );
+
+        assert!(
+            !freqs.is_empty(),
+            "Should compute at least one frequency"
+        );
+        assert_eq!(
+            freqs.len(),
+            mode_shapes.ncols(),
+            "Number of frequencies should match number of mode shape columns"
+        );
+
+        // Classify the modes
+        let families = classify_all_modes(&freqs, &mode_shapes, &mesh.nodes);
+
+        // Check that at least some modes were classified
+        let total_classified: usize = families.values().map(|v| v.len()).sum();
+        assert_eq!(
+            total_classified,
+            freqs.len(),
+            "All modes should be classified"
+        );
+
+        // Verify that the mode indices in families correctly reference the mode shapes
+        for (mode_type, modes) in &families {
+            for (freq, mode_idx, family_rank) in modes {
+                assert!(
+                    *mode_idx < mode_shapes.ncols(),
+                    "Mode index {} for {:?} should be within mode_shapes columns ({})",
+                    mode_idx,
+                    mode_type,
+                    mode_shapes.ncols()
+                );
+                // Verify the frequency matches
+                let expected_freq = freqs[*mode_idx];
+                assert!(
+                    (*freq - expected_freq).abs() < 1e-6,
+                    "Frequency mismatch: family has {} but freqs[{}] = {}",
+                    freq,
+                    mode_idx,
+                    expected_freq
+                );
+                assert!(
+                    *family_rank >= 1,
+                    "Family rank should be 1-indexed, got {}",
+                    family_rank
+                );
+            }
+        }
+
+        // Print classification results for debugging
+        println!("Mode classification results:");
+        for (mode_type, modes) in &families {
+            if !modes.is_empty() {
+                println!(
+                    "  {:?}: {} modes, frequencies: {:?}",
+                    mode_type,
+                    modes.len(),
+                    modes.iter().map(|(f, _, _)| *f).collect::<Vec<_>>()
+                );
+            }
+        }
+    }
 }
