@@ -6,11 +6,13 @@
 
 use wasm_bindgen::prelude::*;
 
+use crate::beam2d_solver::compute_modal_frequencies_2d_from_cuts;
 use crate::cuts::{genes_to_cuts, generate_element_heights};
 use crate::mesh::generate_bar_mesh_3d;
-use crate::solver::compute_modal_frequencies;
-use crate::beam2d_solver::compute_modal_frequencies_2d_from_cuts;
+use crate::modes::classify_all_modes;
 use crate::optimization::materials::{get_material, get_materials_by_category, MATERIAL_KEYS};
+use crate::solver::compute_modal_frequencies_with_shapes;
+use crate::types::ModeType;
 use crate::Cut;
 
 /// Initialize panic hook for better error messages in browser console.
@@ -58,7 +60,7 @@ pub fn compute_frequencies_2d(
         .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
 }
 
-/// Compute modal frequencies using full 3D FEM analysis.
+/// Compute modal frequencies using full 3D FEM analysis with Soares mode classification.
 /// More accurate but slower and more memory-intensive.
 ///
 /// # Arguments
@@ -72,7 +74,18 @@ pub fn compute_frequencies_2d(
 /// * `modes` - Number of modes to compute
 ///
 /// # Returns
-/// JSON array of frequencies in Hz
+/// JSON object with classified modes:
+/// ```json
+/// {
+///   "frequencies": [f1, f2, ...],
+///   "classified": {
+///     "vertical_bending": [{"frequency": f, "mode_index": i, "family_rank": r}, ...],
+///     "torsional": [...],
+///     "lateral": [...],
+///     "axial": [...]
+///   }
+/// }
+/// ```
 #[wasm_bindgen]
 pub fn compute_frequencies_3d(
     length: f64,
@@ -86,19 +99,50 @@ pub fn compute_frequencies_3d(
     rho: f64,
     modes: usize,
 ) -> Result<String, JsValue> {
+    use serde_json::json;
+
     let heights: Vec<f64> = serde_json::from_str(heights_json)
         .map_err(|e| JsValue::from_str(&format!("Invalid heights JSON: {}", e)))?;
 
     if heights.len() != nx {
         return Err(JsValue::from_str(&format!(
-            "Heights length ({}) must equal nx ({})", heights.len(), nx
+            "Heights length ({}) must equal nx ({})",
+            heights.len(),
+            nx
         )));
     }
 
     let mesh = generate_bar_mesh_3d(length, width, &heights, nx, ny, nz);
-    let frequencies = compute_modal_frequencies(&mesh, e, nu, rho, modes);
+    let (frequencies, mode_shapes) = compute_modal_frequencies_with_shapes(&mesh, e, nu, rho, modes);
 
-    serde_json::to_string(&frequencies)
+    // Classify modes using Soares method
+    let classified = classify_all_modes(&frequencies, &mode_shapes, &mesh.nodes);
+
+    // Convert to JSON-friendly format
+    let format_modes = |modes: &[(f64, usize, usize)]| -> Vec<serde_json::Value> {
+        modes
+            .iter()
+            .map(|(freq, mode_idx, family_rank)| {
+                json!({
+                    "frequency": freq,
+                    "mode_index": mode_idx,
+                    "family_rank": family_rank
+                })
+            })
+            .collect()
+    };
+
+    let result = json!({
+        "frequencies": frequencies,
+        "classified": {
+            "vertical_bending": format_modes(classified.get(&ModeType::VerticalBending).unwrap_or(&vec![])),
+            "torsional": format_modes(classified.get(&ModeType::Torsional).unwrap_or(&vec![])),
+            "lateral": format_modes(classified.get(&ModeType::Lateral).unwrap_or(&vec![])),
+            "axial": format_modes(classified.get(&ModeType::Axial).unwrap_or(&vec![]))
+        }
+    });
+
+    serde_json::to_string(&result)
         .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
 }
 
@@ -279,8 +323,8 @@ pub fn generate_mesh_json(
         .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
 }
 
-/// Compute 3D analysis and return both frequencies and mesh data.
-/// Combines frequency computation with mesh generation for visualization.
+/// Compute 3D analysis and return frequencies, classified modes, and mesh data.
+/// Combines frequency computation with Soares mode classification and mesh generation for visualization.
 ///
 /// # Arguments
 /// * `length` - Bar length in meters
@@ -293,7 +337,19 @@ pub fn generate_mesh_json(
 /// * `modes` - Number of modes to compute
 ///
 /// # Returns
-/// JSON object with frequencies array and mesh data
+/// JSON object with frequencies, classified modes, and mesh data:
+/// ```json
+/// {
+///   "frequencies": [f1, f2, ...],
+///   "classified": {
+///     "vertical_bending": [{"frequency": f, "mode_index": i, "family_rank": r}, ...],
+///     "torsional": [...],
+///     "lateral": [...],
+///     "axial": [...]
+///   },
+///   "mesh": { ... }
+/// }
+/// ```
 #[wasm_bindgen]
 pub fn compute_3d_with_mesh(
     length: f64,
@@ -314,16 +370,42 @@ pub fn compute_3d_with_mesh(
 
     if heights.len() != nx {
         return Err(JsValue::from_str(&format!(
-            "Heights length ({}) must equal nx ({})", heights.len(), nx
+            "Heights length ({}) must equal nx ({})",
+            heights.len(),
+            nx
         )));
     }
 
     let mesh = generate_bar_mesh_3d(length, width, &heights, nx, ny, nz);
-    let frequencies = compute_modal_frequencies(&mesh, e, nu, rho, modes);
+    let (frequencies, mode_shapes) =
+        compute_modal_frequencies_with_shapes(&mesh, e, nu, rho, modes);
     let serializable_mesh = mesh.to_serializable();
+
+    // Classify modes using Soares method
+    let classified = classify_all_modes(&frequencies, &mode_shapes, &mesh.nodes);
+
+    // Convert to JSON-friendly format
+    let format_modes = |modes: &[(f64, usize, usize)]| -> Vec<serde_json::Value> {
+        modes
+            .iter()
+            .map(|(freq, mode_idx, family_rank)| {
+                json!({
+                    "frequency": freq,
+                    "mode_index": mode_idx,
+                    "family_rank": family_rank
+                })
+            })
+            .collect()
+    };
 
     let result = json!({
         "frequencies": frequencies,
+        "classified": {
+            "vertical_bending": format_modes(classified.get(&ModeType::VerticalBending).unwrap_or(&vec![])),
+            "torsional": format_modes(classified.get(&ModeType::Torsional).unwrap_or(&vec![])),
+            "lateral": format_modes(classified.get(&ModeType::Lateral).unwrap_or(&vec![])),
+            "axial": format_modes(classified.get(&ModeType::Axial).unwrap_or(&vec![]))
+        },
         "mesh": serializable_mesh
     });
 

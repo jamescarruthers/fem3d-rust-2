@@ -1,4 +1,7 @@
-use fem3d_rust_2::{compute_modal_frequencies, generate_bar_mesh_3d, Material};
+use fem3d_rust_2::{
+    classify_all_modes, compute_modal_frequencies_with_shapes, generate_bar_mesh_3d, Material,
+    ModeType,
+};
 use std::time::Instant;
 
 fn main() {
@@ -80,6 +83,16 @@ fn main() {
     println!("\nAnalytical first bending mode (Euler-Bernoulli): ~352 Hz");
 }
 
+fn mode_type_prefix(mode_type: &ModeType) -> &'static str {
+    match mode_type {
+        ModeType::VerticalBending => "V",
+        ModeType::Torsional => "T",
+        ModeType::Lateral => "L",
+        ModeType::Axial => "A",
+        ModeType::Unknown => "?",
+    }
+}
+
 fn test_mesh(
     name: &str,
     nx: usize,
@@ -101,7 +114,8 @@ fn test_mesh(
     );
 
     let start = Instant::now();
-    let freqs = compute_modal_frequencies(&mesh, material.e, material.nu, material.rho, 4);
+    let (freqs, mode_shapes) =
+        compute_modal_frequencies_with_shapes(&mesh, material.e, material.nu, material.rho, 4);
     let elapsed = start.elapsed();
 
     if freqs.is_empty() {
@@ -109,11 +123,33 @@ fn test_mesh(
     } else {
         println!("done in {:?}", elapsed);
         println!(
-            "  Frequencies: [{:.1}, {:.1}, {:.1}, {:.1}] Hz\n",
+            "  Frequencies: [{:.1}, {:.1}, {:.1}, {:.1}] Hz",
             freqs[0],
             freqs.get(1).unwrap_or(&0.0),
             freqs.get(2).unwrap_or(&0.0),
             freqs.get(3).unwrap_or(&0.0)
         );
+
+        // Classify and display modes
+        let classified = classify_all_modes(&freqs, &mode_shapes, &mesh.nodes);
+        print!("  Classified: ");
+        let mut mode_strs: Vec<String> = Vec::new();
+        for (mode_type, modes) in &classified {
+            for (freq, _, rank) in modes {
+                mode_strs.push(format!(
+                    "{}{}: {:.1}",
+                    mode_type_prefix(mode_type),
+                    rank,
+                    freq
+                ));
+            }
+        }
+        // Sort by frequency for display
+        mode_strs.sort_by(|a, b| {
+            let freq_a: f64 = a.split(": ").nth(1).unwrap_or("0").parse().unwrap_or(0.0);
+            let freq_b: f64 = b.split(": ").nth(1).unwrap_or("0").parse().unwrap_or(0.0);
+            freq_a.partial_cmp(&freq_b).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        println!("{}\n", mode_strs.join(", "));
     }
 }
