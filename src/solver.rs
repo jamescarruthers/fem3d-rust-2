@@ -33,17 +33,10 @@ pub(crate) fn filter_and_truncate_frequencies(mut freqs: Vec<f64>, num_modes: us
 }
 
 /// Sparse matrix-vector product: y = A * x
+/// Uses nalgebra-sparse's optimized implementation.
+#[inline(always)]
 fn spmv(a: &CsrMatrix<f64>, x: &DVector<f64>) -> DVector<f64> {
-    let n = a.nrows();
-    let mut y = DVector::zeros(n);
-    for (i, row) in a.row_iter().enumerate() {
-        let mut sum = 0.0;
-        for (&col, &val) in row.col_indices().iter().zip(row.values().iter()) {
-            sum += val * x[col];
-        }
-        y[i] = sum;
-    }
-    y
+    a * x
 }
 
 /// Build the shifted matrix (K - sigma * M) as a dense matrix for factorization.
@@ -225,6 +218,9 @@ pub fn lanczos_shift_invert(
 
     // Lanczos vectors storage
     let mut v_matrix = DMatrix::zeros(n, num_lanczos);
+    // Cache M*v products to avoid recomputing during reorthogonalization
+    // This reduces O(m²) SPMV calls to O(m), a significant optimization
+    let mut mv_matrix = DMatrix::zeros(n, num_lanczos);
     let mut alpha = Vec::with_capacity(num_lanczos);
     let mut beta = Vec::with_capacity(num_lanczos);
 
@@ -233,6 +229,9 @@ pub fn lanczos_shift_invert(
 
         // w = (K - sigma*M)^(-1) * M * v_curr
         let mv_curr = spmv(m, &v_curr);
+        // Cache M*v_curr for reorthogonalization
+        mv_matrix.set_column(j, &mv_curr);
+
         let w = lu_factor
             .solve(&mv_curr)
             .unwrap_or_else(|| DVector::zeros(n));
@@ -248,10 +247,12 @@ pub fn lanczos_shift_invert(
             w_orth -= beta[j - 1] * &v_prev;
         }
 
-        // Full reorthogonalization (important for numerical stability)
+        // Full reorthogonalization using cached M*v products
+        // Previously this was O(j) SPMV calls per iteration = O(m²) total
+        // Now it's O(1) lookups per iteration = O(m) total
         for k in 0..=j {
             let v_k = v_matrix.column(k);
-            let mv_k = spmv(m, &v_k.clone_owned());
+            let mv_k = mv_matrix.column(k);
             let coeff = w_orth.dot(&mv_k);
             w_orth -= coeff * &v_k;
         }
@@ -425,17 +426,18 @@ pub fn compute_global_matrices_sprs(
 }
 
 /// Sparse matrix-vector product using sprs: y = A * x
+/// Uses sprs's optimized mul_acc_mat_vec_csr for better performance.
 #[cfg(feature = "sprs-backend")]
+#[inline(always)]
 fn spmv_sprs(a: &CsMat<f64>, x: &DVector<f64>) -> DVector<f64> {
     let n = a.rows();
     let mut y = DVector::zeros(n);
-    for (row_idx, row) in a.outer_iterator().enumerate() {
-        let mut sum = 0.0;
-        for (col_idx, &val) in row.iter() {
-            sum += val * x[col_idx];
-        }
-        y[row_idx] = sum;
-    }
+    // Use sprs's optimized sparse matrix-vector multiplication
+    sprs::prod::mul_acc_mat_vec_csr(
+        a.view(),
+        x.as_slice(),
+        y.as_mut_slice(),
+    );
     y
 }
 
@@ -506,6 +508,9 @@ pub fn lanczos_shift_invert_sprs(
 
     // Lanczos vectors storage
     let mut v_matrix = DMatrix::zeros(n, num_lanczos);
+    // Cache M*v products to avoid recomputing during reorthogonalization
+    // This reduces O(m²) SPMV calls to O(m), a significant optimization
+    let mut mv_matrix = DMatrix::zeros(n, num_lanczos);
     let mut alpha = Vec::with_capacity(num_lanczos);
     let mut beta = Vec::with_capacity(num_lanczos);
 
@@ -514,6 +519,9 @@ pub fn lanczos_shift_invert_sprs(
 
         // w = (K - sigma*M)^(-1) * M * v_curr
         let mv_curr = spmv_sprs(m, &v_curr);
+        // Cache M*v_curr for reorthogonalization
+        mv_matrix.set_column(j, &mv_curr);
+
         let w = lu_factor
             .solve(&mv_curr)
             .unwrap_or_else(|| DVector::zeros(n));
@@ -529,10 +537,12 @@ pub fn lanczos_shift_invert_sprs(
             w_orth -= beta[j - 1] * &v_prev;
         }
 
-        // Full reorthogonalization
+        // Full reorthogonalization using cached M*v products
+        // Previously this was O(j) SPMV calls per iteration = O(m²) total
+        // Now it's O(1) lookups per iteration = O(m) total
         for k in 0..=j {
             let v_k = v_matrix.column(k);
-            let mv_k = spmv_sprs(m, &v_k.clone_owned());
+            let mv_k = mv_matrix.column(k);
             let coeff = w_orth.dot(&mv_k);
             w_orth -= coeff * &v_k;
         }
