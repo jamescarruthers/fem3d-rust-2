@@ -50,6 +50,10 @@ pub mod optimization;
 pub mod solver;
 pub mod types;
 
+// WASM bindings (only compiled for wasm32 target)
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
+
 // Re-export commonly used items at the crate root for convenience
 
 // Types and constants

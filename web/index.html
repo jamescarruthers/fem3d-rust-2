@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FEM3D WASM Test Harness</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        h1 { color: #00d9ff; }
+        h2 { color: #00ff88; margin-top: 30px; }
+        .test-section {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        .result {
+            background: #0f3460;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+        .success { border-left: 4px solid #00ff88; }
+        .error { border-left: 4px solid #ff4444; }
+        .info { border-left: 4px solid #00d9ff; }
+        button {
+            background: #00d9ff;
+            color: #1a1a2e;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+        }
+        button:hover { background: #00ff88; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        .memory-bar {
+            height: 20px;
+            background: #0f3460;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .memory-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00ff88, #00d9ff);
+            transition: width 0.3s;
+        }
+        label { display: block; margin: 10px 0 5px; }
+        input[type="number"] {
+            background: #0f3460;
+            border: 1px solid #00d9ff;
+            color: #eee;
+            padding: 8px;
+            border-radius: 4px;
+            width: 100px;
+        }
+        .controls { display: flex; flex-wrap: wrap; gap: 20px; }
+        .control-group { flex: 1; min-width: 200px; }
+    </style>
+</head>
+<body>
+    <h1>FEM3D WASM Test Harness</h1>
+    <p>Test the FEM library running as WebAssembly in your browser.</p>
+
+    <div class="test-section">
+        <h2>WASM Status</h2>
+        <div id="wasm-status" class="result info">Loading WASM module...</div>
+    </div>
+
+    <div class="test-section">
+        <h2>Memory Usage</h2>
+        <div class="memory-bar">
+            <div id="memory-fill" class="memory-fill" style="width: 0%"></div>
+        </div>
+        <div id="memory-info" class="result info">Calculating...</div>
+    </div>
+
+    <div class="test-section">
+        <h2>2D Beam Analysis (Fast)</h2>
+        <p>Uses Timoshenko beam theory - fast and low memory.</p>
+        <div class="controls">
+            <div class="control-group">
+                <label>Bar Length (m):</label>
+                <input type="number" id="length2d" value="0.5" step="0.01">
+                <label>Width (m):</label>
+                <input type="number" id="width2d" value="0.03" step="0.001">
+                <label>Height (m):</label>
+                <input type="number" id="height2d" value="0.024" step="0.001">
+            </div>
+            <div class="control-group">
+                <label>Elements:</label>
+                <input type="number" id="elements2d" value="50" step="10">
+                <label>Modes:</label>
+                <input type="number" id="modes2d" value="4" step="1">
+            </div>
+        </div>
+        <br>
+        <button onclick="run2DAnalysis()">Run 2D Analysis</button>
+        <div id="result-2d" class="result info">Click to run...</div>
+    </div>
+
+    <div class="test-section">
+        <h2>3D FEM Analysis</h2>
+        <p>Full 3D hexahedral mesh - more accurate but memory intensive.</p>
+        <div class="controls">
+            <div class="control-group">
+                <label>Bar Length (m):</label>
+                <input type="number" id="length3d" value="0.3" step="0.01">
+                <label>Width (m):</label>
+                <input type="number" id="width3d" value="0.03" step="0.001">
+                <label>Height (m):</label>
+                <input type="number" id="height3d" value="0.02" step="0.001">
+            </div>
+            <div class="control-group">
+                <label>NX (length divisions):</label>
+                <input type="number" id="nx" value="12" step="1">
+                <label>NY (width divisions):</label>
+                <input type="number" id="ny" value="2" step="1">
+                <label>NZ (height divisions):</label>
+                <input type="number" id="nz" value="2" step="1">
+                <label>Modes:</label>
+                <input type="number" id="modes3d" value="4" step="1">
+            </div>
+        </div>
+        <br>
+        <button onclick="checkMemory()">Check Memory</button>
+        <button onclick="run3DAnalysis()">Run 3D Analysis</button>
+        <div id="result-3d" class="result info">Click to run...</div>
+    </div>
+
+    <div class="test-section">
+        <h2>Memory Stress Test</h2>
+        <p>Test progressively larger meshes to find browser limits.</p>
+        <button onclick="runStressTest()">Run Stress Test</button>
+        <div id="stress-result" class="result info">Click to run...</div>
+    </div>
+
+    <script type="module">
+        // Import the WASM module
+        // Note: You need to build with wasm-pack first:
+        //   wasm-pack build --target web --no-default-features
+
+        let wasm = null;
+
+        async function loadWasm() {
+            try {
+                // Try to load the WASM module
+                const module = await import('../pkg/fem3d_rust_2.js');
+                await module.default();
+                wasm = module;
+
+                document.getElementById('wasm-status').className = 'result success';
+                document.getElementById('wasm-status').textContent = 'WASM module loaded successfully!';
+
+                updateMemoryInfo();
+            } catch (e) {
+                document.getElementById('wasm-status').className = 'result error';
+                document.getElementById('wasm-status').textContent =
+                    'Failed to load WASM module.\n\nBuild it first with:\n  wasm-pack build --target web --no-default-features\n\nError: ' + e.message;
+            }
+        }
+
+        function updateMemoryInfo() {
+            if (performance.memory) {
+                const used = performance.memory.usedJSHeapSize;
+                const total = performance.memory.jsHeapSizeLimit;
+                const percent = (used / total * 100).toFixed(1);
+
+                document.getElementById('memory-fill').style.width = percent + '%';
+                document.getElementById('memory-info').textContent =
+                    `Used: ${(used / 1024 / 1024).toFixed(1)} MB / ${(total / 1024 / 1024).toFixed(0)} MB (${percent}%)`;
+            } else {
+                document.getElementById('memory-info').textContent =
+                    'Memory API not available in this browser (try Chrome)';
+            }
+        }
+
+        // Material properties (Sapele wood)
+        const SAPELE = {
+            e: 10.0e9,   // Young's modulus (Pa)
+            nu: 0.35,    // Poisson's ratio
+            rho: 640.0   // Density (kg/m³)
+        };
+
+        window.run2DAnalysis = async function() {
+            if (!wasm) {
+                document.getElementById('result-2d').className = 'result error';
+                document.getElementById('result-2d').textContent = 'WASM not loaded';
+                return;
+            }
+
+            const length = parseFloat(document.getElementById('length2d').value);
+            const width = parseFloat(document.getElementById('width2d').value);
+            const height = parseFloat(document.getElementById('height2d').value);
+            const elements = parseInt(document.getElementById('elements2d').value);
+            const modes = parseInt(document.getElementById('modes2d').value);
+
+            // Two symmetric cuts
+            const cuts = JSON.stringify([
+                { lambda: 0.22, h: 0.5 },
+                { lambda: 0.78, h: 0.5 }
+            ]);
+
+            const resultEl = document.getElementById('result-2d');
+            resultEl.textContent = 'Computing...';
+
+            try {
+                const start = performance.now();
+                const result = wasm.compute_frequencies_2d(
+                    cuts, length, width, height,
+                    SAPELE.e, SAPELE.nu, SAPELE.rho,
+                    elements, modes
+                );
+                const elapsed = performance.now() - start;
+
+                const frequencies = JSON.parse(result);
+                resultEl.className = 'result success';
+                resultEl.textContent =
+                    `Computed in ${elapsed.toFixed(1)} ms\n\n` +
+                    `Modal Frequencies (Hz):\n` +
+                    frequencies.map((f, i) => `  Mode ${i+1}: ${f.toFixed(2)} Hz`).join('\n');
+
+                updateMemoryInfo();
+            } catch (e) {
+                resultEl.className = 'result error';
+                resultEl.textContent = 'Error: ' + e;
+            }
+        };
+
+        window.checkMemory = function() {
+            if (!wasm) return;
+
+            const nx = parseInt(document.getElementById('nx').value);
+            const ny = parseInt(document.getElementById('ny').value);
+            const nz = parseInt(document.getElementById('nz').value);
+
+            const memBytes = wasm.estimate_memory_usage(nx, ny, nz);
+            const memMB = memBytes / 1024 / 1024;
+            const safe = wasm.is_mesh_size_safe(nx, ny, nz);
+
+            const resultEl = document.getElementById('result-3d');
+            resultEl.className = safe ? 'result success' : 'result error';
+            resultEl.textContent =
+                `Mesh: ${nx} x ${ny} x ${nz}\n` +
+                `Nodes: ${(nx+1) * (ny+1) * (nz+1)}\n` +
+                `Elements: ${nx * ny * nz}\n` +
+                `DOF: ${(nx+1) * (ny+1) * (nz+1) * 3}\n` +
+                `Estimated memory: ${memMB.toFixed(1)} MB\n` +
+                `Status: ${safe ? 'SAFE - within limits' : 'WARNING - may exceed browser memory'}`;
+        };
+
+        window.run3DAnalysis = async function() {
+            if (!wasm) {
+                document.getElementById('result-3d').className = 'result error';
+                document.getElementById('result-3d').textContent = 'WASM not loaded';
+                return;
+            }
+
+            const length = parseFloat(document.getElementById('length3d').value);
+            const width = parseFloat(document.getElementById('width3d').value);
+            const height = parseFloat(document.getElementById('height3d').value);
+            const nx = parseInt(document.getElementById('nx').value);
+            const ny = parseInt(document.getElementById('ny').value);
+            const nz = parseInt(document.getElementById('nz').value);
+            const modes = parseInt(document.getElementById('modes3d').value);
+
+            // Uniform heights
+            const heights = JSON.stringify(Array(nx).fill(height));
+
+            const resultEl = document.getElementById('result-3d');
+            resultEl.textContent = 'Computing (this may take a while)...';
+
+            // Use setTimeout to allow UI update
+            setTimeout(async () => {
+                try {
+                    const start = performance.now();
+                    const result = wasm.compute_frequencies_3d(
+                        length, width, heights, nx, ny, nz,
+                        SAPELE.e, SAPELE.nu, SAPELE.rho, modes
+                    );
+                    const elapsed = performance.now() - start;
+
+                    const frequencies = JSON.parse(result);
+                    resultEl.className = 'result success';
+                    resultEl.textContent =
+                        `Computed in ${elapsed.toFixed(1)} ms\n\n` +
+                        `Mesh: ${nx} x ${ny} x ${nz} (${nx * ny * nz} elements)\n` +
+                        `DOF: ${(nx+1) * (ny+1) * (nz+1) * 3}\n\n` +
+                        `Modal Frequencies (Hz):\n` +
+                        frequencies.map((f, i) => `  Mode ${i+1}: ${f.toFixed(2)} Hz`).join('\n');
+
+                    updateMemoryInfo();
+                } catch (e) {
+                    resultEl.className = 'result error';
+                    resultEl.textContent = 'Error: ' + e;
+                }
+            }, 50);
+        };
+
+        window.runStressTest = async function() {
+            if (!wasm) return;
+
+            const resultEl = document.getElementById('stress-result');
+            resultEl.className = 'result info';
+            resultEl.textContent = 'Running stress test...\n';
+
+            const sizes = [
+                [8, 2, 2],
+                [12, 2, 2],
+                [16, 3, 3],
+                [20, 3, 3],
+                [24, 4, 4],
+                [30, 4, 4],
+            ];
+
+            for (const [nx, ny, nz] of sizes) {
+                const dof = (nx+1) * (ny+1) * (nz+1) * 3;
+                resultEl.textContent += `\nTrying ${nx}x${ny}x${nz} (${dof} DOF)... `;
+
+                try {
+                    const heights = JSON.stringify(Array(nx).fill(0.02));
+                    const start = performance.now();
+                    const result = wasm.compute_frequencies_3d(
+                        0.3, 0.03, heights, nx, ny, nz,
+                        SAPELE.e, SAPELE.nu, SAPELE.rho, 4
+                    );
+                    const elapsed = performance.now() - start;
+
+                    const freqs = JSON.parse(result);
+                    resultEl.textContent += `OK (${elapsed.toFixed(0)} ms, f1=${freqs[0].toFixed(1)} Hz)`;
+                    updateMemoryInfo();
+                } catch (e) {
+                    resultEl.textContent += `FAILED: ${e}`;
+                    resultEl.className = 'result error';
+                    break;
+                }
+
+                // Small delay to allow GC
+                await new Promise(r => setTimeout(r, 100));
+            }
+
+            resultEl.textContent += '\n\nStress test complete.';
+        };
+
+        // Load WASM on page load
+        loadWasm();
+
+        // Update memory periodically
+        setInterval(updateMemoryInfo, 2000);
+    </script>
+</body>
+</html>

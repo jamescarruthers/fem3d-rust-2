@@ -3,12 +3,14 @@
 //! This module provides functions for defining and computing the height profile
 //! of a bar with rectangular undercuts (cuts).
 
+use serde::{Deserialize, Serialize};
+
 /// Single rectangular cut defining the undercut profile.
 ///
 /// Each cut has a position (lambda) from the bar center and a height (h).
 /// Cuts are nested: larger lambda values are outermost.
 /// The profile is symmetric about the bar center.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Cut {
     /// Distance from center of bar (m). Must be between 0 and L/2.
     pub lambda: f64,

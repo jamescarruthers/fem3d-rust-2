@@ -2,6 +2,7 @@
 //!
 //! Main optimization loop implementing the algorithm from Section 3 of the paper.
 
+#[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 use crate::beam2d_solver::compute_modal_frequencies_2d_from_cuts;
@@ -157,7 +158,9 @@ fn evaluate_individual(
     (1.0 - penalty_weight) * tuning_error + penalty_weight * penalty
 }
 
-/// Batch evaluate population fitness using parallel processing.
+/// Batch evaluate population fitness.
+/// Uses parallel processing when the `parallel` feature is enabled.
+#[cfg(feature = "parallel")]
 fn batch_evaluate_population(
     population: Vec<Individual>,
     bar: &BarParameters,
@@ -170,6 +173,41 @@ fn batch_evaluate_population(
 ) -> Vec<Individual> {
     population
         .into_par_iter()
+        .map(|ind| {
+            let fitness = evaluate_individual(
+                &ind,
+                bar,
+                material,
+                target_frequencies,
+                params,
+                num_cuts,
+                penalty_type,
+                penalty_weight,
+            );
+
+            Individual {
+                genes: ind.genes,
+                fitness,
+                sigmas: ind.sigmas,
+            }
+        })
+        .collect()
+}
+
+/// Batch evaluate population fitness (sequential, for WASM).
+#[cfg(not(feature = "parallel"))]
+fn batch_evaluate_population(
+    population: Vec<Individual>,
+    bar: &BarParameters,
+    material: &Material,
+    target_frequencies: &[f64],
+    params: &EAParameters,
+    num_cuts: usize,
+    penalty_type: PenaltyType,
+    penalty_weight: f64,
+) -> Vec<Individual> {
+    population
+        .into_iter()
         .map(|ind| {
             let fitness = evaluate_individual(
                 &ind,
