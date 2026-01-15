@@ -10,11 +10,14 @@ use nalgebra_sparse::CsrMatrix;
 #[cfg(feature = "sprs-backend")]
 use sprs::CsMat;
 
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
 use crate::assembly::{assemble_global_dense, assemble_global_sparse};
 use crate::element::compute_hex8_matrices;
 use crate::mesh::Mesh3d;
 use crate::types::{
-    EigenSolver, NodeCoords, SparseBackend, DEFAULT_SHIFT, DOF_PER_NODE, LANCZOS_TOL,
+    EigenSolver, Matrix24x24, NodeCoords, SparseBackend, DEFAULT_SHIFT, DOF_PER_NODE, LANCZOS_TOL,
     MAX_LANCZOS_ITER, MIN_FREQUENCY_HZ, RIGID_BODY_LAMBDA_THRESHOLD, SPARSE_DOF_THRESHOLD,
 };
 
@@ -30,6 +33,82 @@ pub(crate) fn filter_and_truncate_frequencies(mut freqs: Vec<f64>, num_modes: us
     freqs.sort_by(|a, b| a.total_cmp(b));
     freqs.truncate(num_modes.min(freqs.len()));
     freqs
+}
+
+/// Compute element stiffness and mass matrices for a single element.
+/// This is extracted to enable parallel computation across elements.
+#[inline]
+fn compute_element_matrices(
+    element_nodes: &[usize; 8],
+    mesh_nodes: &[nalgebra::Vector3<f64>],
+    e: f64,
+    nu: f64,
+    rho: f64,
+) -> (Matrix24x24, Matrix24x24) {
+    let mut coords = NodeCoords::zeros();
+    for (i, &node_idx) in element_nodes.iter().enumerate() {
+        let node = mesh_nodes[node_idx];
+        coords[(i, 0)] = node.x;
+        coords[(i, 1)] = node.y;
+        coords[(i, 2)] = node.z;
+    }
+    compute_hex8_matrices(&coords, e, nu, rho)
+}
+
+/// Compute all element matrices sequentially.
+#[cfg_attr(feature = "parallel", allow(dead_code))]
+fn compute_all_element_matrices_sequential(
+    mesh: &Mesh3d,
+    e: f64,
+    nu: f64,
+    rho: f64,
+) -> (Vec<Matrix24x24>, Vec<Matrix24x24>) {
+    let mut ke_list = Vec::with_capacity(mesh.elements.len());
+    let mut me_list = Vec::with_capacity(mesh.elements.len());
+
+    for nodes in &mesh.elements {
+        let (ke, me) = compute_element_matrices(nodes, &mesh.nodes, e, nu, rho);
+        ke_list.push(ke);
+        me_list.push(me);
+    }
+
+    (ke_list, me_list)
+}
+
+/// Compute all element matrices in parallel using Rayon.
+/// Each element's matrices are computed independently, making this embarrassingly parallel.
+#[cfg(feature = "parallel")]
+fn compute_all_element_matrices_parallel(
+    mesh: &Mesh3d,
+    e: f64,
+    nu: f64,
+    rho: f64,
+) -> (Vec<Matrix24x24>, Vec<Matrix24x24>) {
+    let results: Vec<(Matrix24x24, Matrix24x24)> = mesh
+        .elements
+        .par_iter()
+        .map(|nodes| compute_element_matrices(nodes, &mesh.nodes, e, nu, rho))
+        .collect();
+
+    results.into_iter().unzip()
+}
+
+/// Compute all element matrices, using parallel computation when available.
+#[inline]
+fn compute_all_element_matrices(
+    mesh: &Mesh3d,
+    e: f64,
+    nu: f64,
+    rho: f64,
+) -> (Vec<Matrix24x24>, Vec<Matrix24x24>) {
+    #[cfg(feature = "parallel")]
+    {
+        compute_all_element_matrices_parallel(mesh, e, nu, rho)
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        compute_all_element_matrices_sequential(mesh, e, nu, rho)
+    }
 }
 
 /// Sparse matrix-vector product: y = A * x
@@ -68,31 +147,14 @@ fn build_shifted_matrix_dense(k: &CsrMatrix<f64>, m: &CsrMatrix<f64>, sigma: f64
 // ============================================================================
 
 /// Build dense global stiffness and mass matrices for a mesh (intended for small test cases).
+/// Uses parallel element matrix computation when the "parallel" feature is enabled.
 pub fn compute_global_matrices_dense(
     mesh: &Mesh3d,
     e: f64,
     nu: f64,
     rho: f64,
 ) -> (DMatrix<f64>, DMatrix<f64>) {
-    let mut ke_list = Vec::with_capacity(mesh.elements.len());
-    let mut me_list = Vec::with_capacity(mesh.elements.len());
-
-    for nodes in &mesh.elements {
-        let mut coords = NodeCoords::zeros();
-        for (i, node_idx) in nodes.iter().copied().enumerate() {
-            assert!(
-                node_idx < mesh.nodes.len(),
-                "element references invalid node index"
-            );
-            let node = mesh.nodes[node_idx];
-            coords[(i, 0)] = node.x;
-            coords[(i, 1)] = node.y;
-            coords[(i, 2)] = node.z;
-        }
-        let (ke, me) = compute_hex8_matrices(&coords, e, nu, rho);
-        ke_list.push(ke);
-        me_list.push(me);
-    }
+    let (ke_list, me_list) = compute_all_element_matrices(mesh, e, nu, rho);
 
     let num_dofs = mesh.nodes.len() * DOF_PER_NODE;
     (
@@ -138,27 +200,14 @@ pub fn compute_modal_frequencies(
 // ============================================================================
 
 /// Build sparse global stiffness and mass matrices.
+/// Uses parallel element matrix computation when the "parallel" feature is enabled.
 pub fn compute_global_matrices_sparse(
     mesh: &Mesh3d,
     e: f64,
     nu: f64,
     rho: f64,
 ) -> (CsrMatrix<f64>, CsrMatrix<f64>) {
-    let mut ke_list = Vec::with_capacity(mesh.elements.len());
-    let mut me_list = Vec::with_capacity(mesh.elements.len());
-
-    for nodes in &mesh.elements {
-        let mut coords = NodeCoords::zeros();
-        for (i, node_idx) in nodes.iter().copied().enumerate() {
-            let node = mesh.nodes[node_idx];
-            coords[(i, 0)] = node.x;
-            coords[(i, 1)] = node.y;
-            coords[(i, 2)] = node.z;
-        }
-        let (ke, me) = compute_hex8_matrices(&coords, e, nu, rho);
-        ke_list.push(ke);
-        me_list.push(me);
-    }
+    let (ke_list, me_list) = compute_all_element_matrices(mesh, e, nu, rho);
 
     let num_dofs = mesh.nodes.len() * DOF_PER_NODE;
     (
@@ -395,6 +444,7 @@ pub fn compute_modal_frequencies_with_solver(
 // ============================================================================
 
 /// Build sparse global matrices using sprs.
+/// Uses parallel element matrix computation when the "parallel" feature is enabled.
 #[cfg(feature = "sprs-backend")]
 pub fn compute_global_matrices_sprs(
     mesh: &Mesh3d,
@@ -402,21 +452,7 @@ pub fn compute_global_matrices_sprs(
     nu: f64,
     rho: f64,
 ) -> (CsMat<f64>, CsMat<f64>) {
-    let mut ke_list = Vec::with_capacity(mesh.elements.len());
-    let mut me_list = Vec::with_capacity(mesh.elements.len());
-
-    for nodes in &mesh.elements {
-        let mut coords = NodeCoords::zeros();
-        for (i, node_idx) in nodes.iter().copied().enumerate() {
-            let node = mesh.nodes[node_idx];
-            coords[(i, 0)] = node.x;
-            coords[(i, 1)] = node.y;
-            coords[(i, 2)] = node.z;
-        }
-        let (ke, me) = compute_hex8_matrices(&coords, e, nu, rho);
-        ke_list.push(ke);
-        me_list.push(me);
-    }
+    let (ke_list, me_list) = compute_all_element_matrices(mesh, e, nu, rho);
 
     let num_dofs = mesh.nodes.len() * DOF_PER_NODE;
     (

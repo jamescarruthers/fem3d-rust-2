@@ -8,6 +8,7 @@ pub type Matrix6 = SMatrix<f64, 6, 6>;
 pub type Matrix6x24 = SMatrix<f64, 6, 24>;
 pub type Matrix3x24 = SMatrix<f64, 3, 24>;
 pub type Matrix3x8 = SMatrix<f64, 3, 8>;
+pub type Matrix24x24 = SMatrix<f64, 24, 24>;
 
 // Core constants
 pub const DOF_PER_NODE: usize = 3;
