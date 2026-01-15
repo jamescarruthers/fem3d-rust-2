@@ -89,7 +89,9 @@ pub use mesh::{
 pub use solver::{
     compute_global_matrices_dense, compute_global_matrices_sparse, compute_modal_frequencies,
     compute_modal_frequencies_full, compute_modal_frequencies_sparse,
-    compute_modal_frequencies_with_solver, lanczos_shift_invert,
+    compute_modal_frequencies_sparse_with_shapes, compute_modal_frequencies_with_shapes,
+    compute_modal_frequencies_with_shapes_solver, compute_modal_frequencies_with_solver,
+    lanczos_shift_invert,
 };
 #[cfg(feature = "sprs-backend")]
 pub use solver::{compute_global_matrices_sprs, compute_modal_frequencies_sprs, lanczos_shift_invert_sprs};

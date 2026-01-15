@@ -173,26 +173,82 @@ pub fn compute_modal_frequencies(
     rho: f64,
     num_modes: usize,
 ) -> Vec<f64> {
+    let (freqs, _) = compute_modal_frequencies_with_shapes(mesh, e, nu, rho, num_modes);
+    freqs
+}
+
+/// Compute modal frequencies (Hz) and mode shapes for a small mesh using dense eigenvalue solve.
+///
+/// Returns (frequencies, mode_shapes) where mode_shapes is a matrix with columns
+/// corresponding to each frequency. The eigenvectors are in the original coordinate
+/// system (not the transformed space).
+///
+/// Returns (empty vec, empty matrix) if the mass matrix is not positive definite.
+pub fn compute_modal_frequencies_with_shapes(
+    mesh: &Mesh3d,
+    e: f64,
+    nu: f64,
+    rho: f64,
+    num_modes: usize,
+) -> (Vec<f64>, DMatrix<f64>) {
     let (k, m) = compute_global_matrices_dense(mesh, e, nu, rho);
+    let n = k.nrows();
+
     let Some(chol) = m.cholesky() else {
-        return Vec::new();
+        return (Vec::new(), DMatrix::zeros(n, 0));
     };
-    let Some(l_inv) = chol.l().try_inverse() else {
-        return Vec::new();
+    let l = chol.l();
+    let Some(l_inv) = l.try_inverse() else {
+        return (Vec::new(), DMatrix::zeros(n, 0));
     };
-    // Dense transform is acceptable here because this helper targets small test meshes.
-    let a = l_inv.transpose() * k * l_inv;
+    // Transform to standard eigenvalue problem: A = L^(-T) * K * L^(-1)
+    // where L is the Cholesky factor of M (M = L * L^T)
+    let a = &l_inv.transpose() * &k * &l_inv;
 
     let eig = SymmetricEigen::new(a);
-    let freqs: Vec<f64> = eig
+
+    // Collect indices of eigenvalues above rigid body threshold, paired with their values
+    let mut eigen_pairs: Vec<(f64, usize)> = eig
         .eigenvalues
         .iter()
         .copied()
-        .filter(|lambda| *lambda > RIGID_BODY_LAMBDA_THRESHOLD)
-        .map(|lambda| lambda.sqrt() / (2.0 * std::f64::consts::PI))
+        .enumerate()
+        .filter(|(_, lambda)| *lambda > RIGID_BODY_LAMBDA_THRESHOLD)
+        .map(|(i, lambda)| (lambda, i))
         .collect();
 
-    filter_and_truncate_frequencies(freqs, num_modes)
+    // Sort by eigenvalue (ascending frequency order)
+    eigen_pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Truncate to requested number of modes
+    eigen_pairs.truncate(num_modes);
+
+    // Convert eigenvalues to frequencies and transform eigenvectors back to original space
+    // In transformed space: A * y = λ * y
+    // Original space: x = L^(-1) * y
+    let mut freqs = Vec::with_capacity(eigen_pairs.len());
+    let mut mode_shapes = DMatrix::zeros(n, eigen_pairs.len());
+
+    for (col_idx, (lambda, eig_idx)) in eigen_pairs.iter().enumerate() {
+        let freq = lambda.sqrt() / (2.0 * std::f64::consts::PI);
+        if freq > MIN_FREQUENCY_HZ {
+            freqs.push(freq);
+            // Transform eigenvector back: x = L^(-1) * y
+            let y = eig.eigenvectors.column(*eig_idx);
+            let x = &l_inv * y;
+            // Normalize
+            let norm = x.norm();
+            if norm > 1e-14 {
+                mode_shapes.set_column(col_idx, &(x / norm));
+            }
+        }
+    }
+
+    // Trim mode_shapes to actual number of valid modes
+    let num_valid = freqs.len();
+    let mode_shapes = mode_shapes.columns(0, num_valid).into_owned();
+
+    (freqs, mode_shapes)
 }
 
 // ============================================================================
@@ -394,15 +450,53 @@ pub fn compute_modal_frequencies_sparse(
     rho: f64,
     num_modes: usize,
 ) -> Vec<f64> {
+    let (freqs, _) = compute_modal_frequencies_sparse_with_shapes(mesh, e, nu, rho, num_modes);
+    freqs
+}
+
+/// Compute modal frequencies and mode shapes using sparse shift-invert Lanczos solver.
+///
+/// Returns (frequencies, mode_shapes) where mode_shapes is a matrix with columns
+/// corresponding to each frequency.
+///
+/// This is more efficient for large problems (> 500 DOF).
+pub fn compute_modal_frequencies_sparse_with_shapes(
+    mesh: &Mesh3d,
+    e: f64,
+    nu: f64,
+    rho: f64,
+    num_modes: usize,
+) -> (Vec<f64>, DMatrix<f64>) {
     let (k, m) = compute_global_matrices_sparse(mesh, e, nu, rho);
-    let (eigenvalues, _) = lanczos_shift_invert(&k, &m, num_modes, DEFAULT_SHIFT);
+    let (eigenvalues, eigenvectors) = lanczos_shift_invert(&k, &m, num_modes, DEFAULT_SHIFT);
 
     let freqs: Vec<f64> = eigenvalues
         .iter()
         .map(|&lambda| lambda.sqrt() / (2.0 * std::f64::consts::PI))
         .collect();
 
-    filter_and_truncate_frequencies(freqs, num_modes)
+    // Filter out low frequencies while keeping eigenvectors aligned
+    let mut filtered_freqs = Vec::with_capacity(freqs.len());
+    let n = eigenvectors.nrows();
+    let mut filtered_vecs = Vec::with_capacity(freqs.len());
+
+    for (i, &f) in freqs.iter().enumerate() {
+        if f > MIN_FREQUENCY_HZ && i < eigenvectors.ncols() {
+            filtered_freqs.push(f);
+            filtered_vecs.push(eigenvectors.column(i).clone_owned());
+        }
+    }
+
+    // Truncate to requested number
+    filtered_freqs.truncate(num_modes);
+    let num_modes_found = filtered_freqs.len();
+
+    let mut mode_shapes = DMatrix::zeros(n, num_modes_found);
+    for (i, v) in filtered_vecs.iter().take(num_modes_found).enumerate() {
+        mode_shapes.set_column(i, v);
+    }
+
+    (filtered_freqs, mode_shapes)
 }
 
 /// Compute modal frequencies with automatic solver selection.
@@ -440,6 +534,45 @@ pub fn compute_modal_frequencies_with_solver(
         compute_modal_frequencies_sparse(mesh, e, nu, rho, num_modes)
     } else {
         compute_modal_frequencies(mesh, e, nu, rho, num_modes)
+    }
+}
+
+/// Compute modal frequencies and mode shapes with automatic solver selection.
+///
+/// Automatically chooses between dense and sparse solver based on problem size,
+/// or uses the specified solver type.
+///
+/// # Arguments
+/// * `mesh` - The 3D mesh
+/// * `e` - Young's modulus (Pa)
+/// * `nu` - Poisson's ratio
+/// * `rho` - Density (kg/m³)
+/// * `num_modes` - Number of modes to compute
+/// * `solver` - Solver type (Dense, Sparse, or Auto)
+///
+/// # Returns
+/// Tuple of (frequencies in Hz, mode shapes matrix) where mode shapes columns
+/// correspond to each frequency.
+pub fn compute_modal_frequencies_with_shapes_solver(
+    mesh: &Mesh3d,
+    e: f64,
+    nu: f64,
+    rho: f64,
+    num_modes: usize,
+    solver: EigenSolver,
+) -> (Vec<f64>, DMatrix<f64>) {
+    let num_dofs = mesh.nodes.len() * DOF_PER_NODE;
+
+    let use_sparse = match solver {
+        EigenSolver::Dense => false,
+        EigenSolver::Sparse => true,
+        EigenSolver::Auto => num_dofs > SPARSE_DOF_THRESHOLD,
+    };
+
+    if use_sparse {
+        compute_modal_frequencies_sparse_with_shapes(mesh, e, nu, rho, num_modes)
+    } else {
+        compute_modal_frequencies_with_shapes(mesh, e, nu, rho, num_modes)
     }
 }
 
