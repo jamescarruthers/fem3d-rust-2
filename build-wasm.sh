@@ -65,8 +65,13 @@ if [ "$1" == "--threads" ] || [ "$1" == "-t" ]; then
     echo_info "Building with cargo +nightly..."
 
     # Clean previous build to ensure fresh compilation with correct flags
-    echo_info "Cleaning previous WASM build..."
+    # This is critical because build-std caches the std library separately
+    echo_info "Cleaning previous WASM build and build-std cache..."
     cargo clean --target wasm32-unknown-unknown 2>/dev/null || true
+    # Also clean the target directory's build-std artifacts
+    rm -rf target/wasm32-unknown-unknown/release/build 2>/dev/null || true
+    rm -rf target/wasm32-unknown-unknown/release/deps 2>/dev/null || true
+    rm -rf target/release/.fingerprint 2>/dev/null || true
 
     # Build with nightly, atomics, and build-std
     # The -C target-feature flags enable:
@@ -82,7 +87,10 @@ if [ "$1" == "--threads" ] || [ "$1" == "-t" ]; then
     # This is required because the pre-built std doesn't have threading support
     echo_info "Building with cargo +nightly (this may take a while on first run)..."
 
-    RUSTFLAGS='-C target-feature=+atomics,+bulk-memory,+mutable-globals -C link-arg=--shared-memory -C link-arg=--import-memory -C link-arg=--max-memory=1073741824' \
+    # Set CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS to ensure flags apply to build-std
+    # This is more reliable than RUSTFLAGS for build-std compilation
+    export CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS='-C target-feature=+atomics,+bulk-memory,+mutable-globals -C link-arg=--shared-memory -C link-arg=--import-memory -C link-arg=--max-memory=1073741824'
+
     cargo +nightly build \
         --target wasm32-unknown-unknown \
         --release \
