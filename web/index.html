@@ -1245,7 +1245,8 @@
                     );
                     const elapsed = performance.now() - start;
 
-                    const frequencies = JSON.parse(result);
+                    const data = JSON.parse(result);
+                    const frequencies = data.frequencies || data;
                     displayFrequencies('result-3d', 'freq-display-3d', frequencies, elapsed, '3D FEM');
 
                     updateMemoryInfo();
@@ -1329,7 +1330,8 @@
                     );
                     const elapsed = performance.now() - start;
 
-                    const freqs = JSON.parse(result);
+                    const data = JSON.parse(result);
+                    const freqs = data.frequencies || data;
                     resultEl.textContent += `OK (${elapsed.toFixed(0)} ms, f1=${freqs[0].toFixed(1)} Hz)`;
                     updateMemoryInfo();
                 } catch (e) {
