@@ -137,4 +137,11 @@ pub use optimization::{
     combined_objective_roughness, combined_objective_volume, compute_cents_error,
     compute_cents_errors, compute_roughness_penalty, compute_tuning_error, compute_volume_penalty,
     evaluate_detailed, evaluate_fitness,
+    // Surrogate optimization (Soares et al. 2021)
+    run_surrogate_optimization, AlphaSchedule, RbfKernel, SurrogateConfig, SurrogateModel,
+    SurrogateResult,
+    // Sampling methods
+    grid_sample, latin_hypercube_sample, random_sample, sobol_sample,
+    // Hybrid optimization strategies
+    run_hybrid_optimization, HybridConfig, HybridResult, OptimizationStrategy,
 };

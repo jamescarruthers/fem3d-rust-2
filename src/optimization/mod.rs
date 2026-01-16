@@ -1,9 +1,16 @@
-//! Evolutionary optimization for bar tuning.
+//! Optimization module for bar tuning.
 //!
-//! This module provides a complete evolutionary algorithm implementation
-//! for optimizing undercut bar geometries to achieve target frequencies.
+//! This module provides multiple optimization strategies for finding optimal
+//! undercut bar geometries to achieve target frequencies:
 //!
-//! # Example
+//! - **Evolutionary Algorithm (EA)**: Global search using genetic operators
+//! - **Surrogate Optimization**: RBF-based surrogate model for expensive 3D FEM
+//! - **Hybrid Strategies**: Combining fast 2D analysis with 3D refinement
+//!
+//! The surrogate and hybrid approaches are based on Soares et al. 2021:
+//! "Tuning of bending and torsional modes of bars used in mallet percussion instruments"
+//!
+//! # Example: Evolutionary Algorithm
 //!
 //! ```
 //! use fem3d_rust_2::optimization::{
@@ -35,14 +42,41 @@
 //!     println!("  Cut: lambda={:.4}m, h={:.4}m", cut.lambda, cut.h);
 //! }
 //! ```
+//!
+//! # Example: Hybrid 2D→3D Optimization (Recommended)
+//!
+//! ```ignore
+//! use fem3d_rust_2::optimization::{
+//!     HybridConfig, OptimizationStrategy, run_hybrid_optimization,
+//!     BarParameters, Material, EAParameters, SurrogateConfig,
+//! };
+//!
+//! let bar = BarParameters::new(0.35, 0.05, 0.01, 0.002);
+//! let material = Material::aluminum();
+//! let targets = vec![175.0, 700.0, 1750.0];
+//!
+//! let config = HybridConfig::new(bar, material, targets, 2)
+//!     .with_strategy(OptimizationStrategy::Hybrid2Dto3D {
+//!         ea_params: EAParameters::default(),
+//!         surrogate_config: SurrogateConfig::default(),
+//!         frequency_correction: 1.0,
+//!     })
+//!     .with_verbose(true);
+//!
+//! let result = run_hybrid_optimization(&config);
+//! println!("Max error: {:.1} cents", result.max_error_cents);
+//! ```
 
 pub mod algorithm;
 pub mod crossover;
+pub mod hybrid;
 pub mod materials;
 pub mod mutation;
 pub mod objective;
 pub mod population;
+pub mod sampling;
 pub mod selection;
+pub mod surrogate;
 pub mod types;
 
 // Re-export commonly used items
@@ -77,4 +111,18 @@ pub use types::{
 pub use materials::{
     calculate_shear_modulus, get_all_materials, get_material, get_materials_by_category,
     KAPPA, MATERIAL_KEYS,
+};
+
+// Surrogate optimization (Soares et al. 2021)
+pub use surrogate::{
+    run_surrogate_optimization, AlphaSchedule, RbfKernel, SurrogateConfig, SurrogateModel,
+    SurrogateResult,
+};
+
+// Sampling methods
+pub use sampling::{grid_sample, latin_hypercube_sample, random_sample, sobol_sample};
+
+// Hybrid optimization strategies
+pub use hybrid::{
+    run_hybrid_optimization, HybridConfig, HybridResult, OptimizationStrategy,
 };
