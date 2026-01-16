@@ -1,6 +1,22 @@
 //! WASM bindings for browser integration.
 //!
 //! This module provides JavaScript-friendly wrappers around the core FEM functionality.
+//!
+//! ## Web Worker Multithreading
+//!
+//! When built with the `parallel-wasm` feature, this module enables true multithreading
+//! in the browser using Web Workers and SharedArrayBuffer. This requires:
+//!
+//! 1. The server to send proper COOP/COEP headers:
+//!    - `Cross-Origin-Opener-Policy: same-origin`
+//!    - `Cross-Origin-Embedder-Policy: require-corp`
+//!
+//! 2. JavaScript to initialize the thread pool before calling parallel functions:
+//!    ```javascript
+//!    import init, { initThreadPool } from './pkg/fem3d_rust_2.js';
+//!    await init();
+//!    await initThreadPool(navigator.hardwareConcurrency);
+//!    ```
 
 #![cfg(target_arch = "wasm32")]
 
@@ -15,10 +31,42 @@ use crate::solver::compute_modal_frequencies_with_shapes;
 use crate::types::ModeType;
 use crate::Cut;
 
+// Re-export wasm-bindgen-rayon's initialization function when parallel-wasm feature is enabled.
+// This allows JavaScript to initialize the thread pool for web worker parallelism.
+#[cfg(feature = "parallel-wasm")]
+pub use wasm_bindgen_rayon::init_thread_pool;
+
 /// Initialize panic hook for better error messages in browser console.
 #[wasm_bindgen(start)]
 pub fn init() {
     console_error_panic_hook::set_once();
+}
+
+/// Check if multithreading is available.
+///
+/// Returns true if the WASM module was built with parallel-wasm feature
+/// and can use Web Workers for parallel computation.
+#[wasm_bindgen]
+pub fn is_multithreading_available() -> bool {
+    cfg!(feature = "parallel-wasm")
+}
+
+/// Get the recommended number of threads for parallel computation.
+///
+/// Returns 1 if multithreading is not available, otherwise returns
+/// the number of logical CPU cores (which should be passed to initThreadPool).
+#[wasm_bindgen]
+pub fn get_recommended_thread_count() -> usize {
+    #[cfg(feature = "parallel-wasm")]
+    {
+        // In WASM, we can't directly query CPU count, so return a reasonable default.
+        // JavaScript should use navigator.hardwareConcurrency instead.
+        4
+    }
+    #[cfg(not(feature = "parallel-wasm"))]
+    {
+        1
+    }
 }
 
 /// Compute modal frequencies using 2D Timoshenko beam theory.

@@ -9,9 +9,18 @@
 //!
 //! This approach significantly reduces the number of expensive 3D FEM evaluations
 //! needed to find optimal solutions (typically 50-100 vs 1000+ for pure EA).
+//!
+//! ## Parallelization
+//!
+//! When the `parallel` feature is enabled, the RBF matrix construction and
+//! candidate evaluation are parallelized using Rayon. This provides significant
+//! speedups for large numbers of samples or candidates.
 
 use nalgebra::{DMatrix, DVector};
 use rand::Rng;
+
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 /// Radial basis function kernel types.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -143,6 +152,7 @@ impl SurrogateModel {
     }
 
     /// Refit RBF coefficients by solving linear system Φβ = f.
+    /// Uses parallel computation for matrix construction when available.
     fn refit(&mut self) {
         let m = self.samples.len();
         if m == 0 {
@@ -151,15 +161,7 @@ impl SurrogateModel {
         }
 
         // Build interpolation matrix Φ where Φ[i,j] = φ(‖xᵢ - xⱼ‖)
-        let mut phi = DMatrix::zeros(m, m);
-        for i in 0..m {
-            for j in 0..m {
-                let dist = euclidean_distance(&self.samples[i], &self.samples[j]);
-                phi[(i, j)] = self.kernel.evaluate(dist);
-            }
-            // Add regularization to diagonal for numerical stability
-            phi[(i, i)] += self.regularization;
-        }
+        let phi = self.build_rbf_matrix();
 
         // Solve Φ β = f for coefficients β
         let f = DVector::from_vec(self.values.clone());
@@ -174,6 +176,56 @@ impl SurrogateModel {
             // Last resort: use pseudo-inverse
             self.coefficients = DVector::zeros(m);
         }
+    }
+
+    /// Build the RBF interpolation matrix (sequential version).
+    #[cfg(not(feature = "parallel"))]
+    fn build_rbf_matrix(&self) -> DMatrix<f64> {
+        let m = self.samples.len();
+        let mut phi = DMatrix::zeros(m, m);
+        for i in 0..m {
+            for j in 0..m {
+                let dist = euclidean_distance(&self.samples[i], &self.samples[j]);
+                phi[(i, j)] = self.kernel.evaluate(dist);
+            }
+            // Add regularization to diagonal for numerical stability
+            phi[(i, i)] += self.regularization;
+        }
+        phi
+    }
+
+    /// Build the RBF interpolation matrix (parallel version).
+    /// Parallelizes row computation for O(n²) speedup on multicore systems.
+    #[cfg(feature = "parallel")]
+    fn build_rbf_matrix(&self) -> DMatrix<f64> {
+        let m = self.samples.len();
+
+        // Compute each row in parallel
+        let rows: Vec<Vec<f64>> = (0..m)
+            .into_par_iter()
+            .map(|i| {
+                let mut row = Vec::with_capacity(m);
+                for j in 0..m {
+                    let dist = euclidean_distance(&self.samples[i], &self.samples[j]);
+                    let mut val = self.kernel.evaluate(dist);
+                    // Add regularization to diagonal
+                    if i == j {
+                        val += self.regularization;
+                    }
+                    row.push(val);
+                }
+                row
+            })
+            .collect();
+
+        // Assemble into matrix
+        let mut phi = DMatrix::zeros(m, m);
+        for (i, row) in rows.into_iter().enumerate() {
+            for (j, val) in row.into_iter().enumerate() {
+                phi[(i, j)] = val;
+            }
+        }
+        phi
     }
 
     /// Predict surrogate value at a new point.
@@ -259,6 +311,12 @@ impl SurrogateModel {
     /// * `num_candidates` - Number of random candidates to evaluate
     /// * `alpha` - Merit function weight (higher = more exploitation)
     pub fn suggest_next(&self, num_candidates: usize, alpha: f64) -> Vec<f64> {
+        self.suggest_next_impl(num_candidates, alpha)
+    }
+
+    /// Sequential implementation of suggest_next.
+    #[cfg(not(feature = "parallel"))]
+    fn suggest_next_impl(&self, num_candidates: usize, alpha: f64) -> Vec<f64> {
         let mut rng = rand::thread_rng();
 
         let mut best_candidate: Vec<f64> = self
@@ -285,10 +343,71 @@ impl SurrogateModel {
         best_candidate
     }
 
+    /// Parallel implementation of suggest_next.
+    /// Evaluates candidates in parallel batches for better performance.
+    #[cfg(feature = "parallel")]
+    fn suggest_next_impl(&self, num_candidates: usize, alpha: f64) -> Vec<f64> {
+        use rand::SeedableRng;
+
+        // Generate all candidates in parallel with thread-local RNGs
+        let candidates: Vec<Vec<f64>> = (0..num_candidates)
+            .into_par_iter()
+            .map_init(
+                || rand::rngs::SmallRng::from_entropy(),
+                |rng, _| {
+                    self.bounds
+                        .iter()
+                        .map(|(lo, hi)| rng.gen_range(*lo..*hi))
+                        .collect()
+                },
+            )
+            .collect();
+
+        // Evaluate merit in parallel and find the best
+        candidates
+            .into_par_iter()
+            .map(|candidate| {
+                let merit = self.merit(&candidate, alpha);
+                (candidate, merit)
+            })
+            .reduce(
+                || {
+                    // Initial value: generate a random candidate
+                    let mut rng = rand::thread_rng();
+                    let candidate: Vec<f64> = self
+                        .bounds
+                        .iter()
+                        .map(|(lo, hi)| rng.gen_range(*lo..*hi))
+                        .collect();
+                    let merit = self.merit(&candidate, alpha);
+                    (candidate, merit)
+                },
+                |best, current| {
+                    if current.1 < best.1 {
+                        current
+                    } else {
+                        best
+                    }
+                },
+            )
+            .0
+    }
+
     /// Suggest next sample using gradient-enhanced search around best point.
     ///
     /// Combines random search with local refinement around the current best.
     pub fn suggest_next_enhanced(
+        &self,
+        num_candidates: usize,
+        alpha: f64,
+        local_fraction: f64,
+    ) -> Vec<f64> {
+        self.suggest_next_enhanced_impl(num_candidates, alpha, local_fraction)
+    }
+
+    /// Sequential implementation of suggest_next_enhanced.
+    #[cfg(not(feature = "parallel"))]
+    fn suggest_next_enhanced_impl(
         &self,
         num_candidates: usize,
         alpha: f64,
@@ -342,6 +461,91 @@ impl SurrogateModel {
         }
 
         best_candidate
+    }
+
+    /// Parallel implementation of suggest_next_enhanced.
+    #[cfg(feature = "parallel")]
+    fn suggest_next_enhanced_impl(
+        &self,
+        num_candidates: usize,
+        alpha: f64,
+        local_fraction: f64,
+    ) -> Vec<f64> {
+        use rand::SeedableRng;
+
+        let num_local = ((num_candidates as f64) * local_fraction) as usize;
+        let num_global = num_candidates - num_local;
+
+        // Generate global candidates in parallel
+        let global_candidates: Vec<Vec<f64>> = (0..num_global)
+            .into_par_iter()
+            .map_init(
+                || rand::rngs::SmallRng::from_entropy(),
+                |rng, _| {
+                    self.bounds
+                        .iter()
+                        .map(|(lo, hi)| rng.gen_range(*lo..*hi))
+                        .collect()
+                },
+            )
+            .collect();
+
+        // Generate local candidates around best sample in parallel
+        let local_candidates: Vec<Vec<f64>> = if let Some(best_sample) = self.best_sample() {
+            (0..num_local)
+                .into_par_iter()
+                .map_init(
+                    || rand::rngs::SmallRng::from_entropy(),
+                    |rng, _| {
+                        best_sample
+                            .iter()
+                            .zip(self.bounds.iter())
+                            .map(|(&x, (lo, hi))| {
+                                let range = hi - lo;
+                                let perturbation = rng.gen_range(-0.1..0.1) * range;
+                                (x + perturbation).clamp(*lo, *hi)
+                            })
+                            .collect()
+                    },
+                )
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        // Combine and evaluate all candidates in parallel
+        let all_candidates: Vec<Vec<f64>> = global_candidates
+            .into_iter()
+            .chain(local_candidates)
+            .collect();
+
+        all_candidates
+            .into_par_iter()
+            .map(|candidate| {
+                let merit = self.merit(&candidate, alpha);
+                (candidate, merit)
+            })
+            .reduce(
+                || {
+                    // Initial value
+                    let mut rng = rand::thread_rng();
+                    let candidate: Vec<f64> = self
+                        .bounds
+                        .iter()
+                        .map(|(lo, hi)| rng.gen_range(*lo..*hi))
+                        .collect();
+                    let merit = self.merit(&candidate, alpha);
+                    (candidate, merit)
+                },
+                |best, current| {
+                    if current.1 < best.1 {
+                        current
+                    } else {
+                        best
+                    }
+                },
+            )
+            .0
     }
 }
 

@@ -1,2 +1,12 @@
 [env]
 RUST_TEST_NOCAPTURE = "1"
+
+# WASM multithreading support requires atomics and bulk-memory features.
+# These flags enable SharedArrayBuffer and atomic operations for web workers.
+# Note: Requires nightly Rust and wasm-bindgen-rayon feature.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=+atomics,+bulk-memory,+mutable-globals"]
+
+# Unstable features required for WASM threading
+[unstable]
+build-std = ["panic_abort", "std"]
