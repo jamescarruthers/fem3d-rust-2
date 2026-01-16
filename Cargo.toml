@@ -28,11 +28,12 @@ rayon = { version = "1.10", optional = true }
 
 # WASM-specific dependencies with web worker multithreading support
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = "0.2"
+wasm-bindgen = "0.2.99"
 getrandom = { version = "0.2", features = ["js"] }
 console_error_panic_hook = "0.1"
 rayon = { version = "1.10", optional = true }
-wasm-bindgen-rayon = { version = "1.2", optional = true }
+# wasm-bindgen-rayon 1.2.1+ supports wasm-bindgen 0.2.93+
+wasm-bindgen-rayon = { version = "1.2.1", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = "0.3"

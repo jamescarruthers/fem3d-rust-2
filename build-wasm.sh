@@ -58,9 +58,17 @@ if [ "$1" == "--threads" ] || [ "$1" == "-t" ]; then
         exit 1
     fi
 
+    # Check wasm-bindgen version
+    WASM_BINDGEN_VERSION=$(wasm-bindgen --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+    echo_info "wasm-bindgen-cli version: $WASM_BINDGEN_VERSION"
+
     echo_info "Building with cargo +nightly..."
 
     # Build with nightly, atomics, and build-std
+    # The -C target-feature flags enable:
+    #   +atomics: Atomic operations for SharedArrayBuffer
+    #   +bulk-memory: Bulk memory operations
+    #   +mutable-globals: Mutable global variables (required for thread-local storage)
     RUSTFLAGS='-C target-feature=+atomics,+bulk-memory,+mutable-globals' \
     cargo +nightly build \
         --target wasm32-unknown-unknown \
@@ -71,7 +79,9 @@ if [ "$1" == "--threads" ] || [ "$1" == "-t" ]; then
     echo_info "Running wasm-bindgen..."
 
     # Run wasm-bindgen to generate JS bindings
-    # --reference-types and --weak-refs are required for proper thread pool support
+    # Required flags for thread pool support:
+    #   --reference-types: Enable reference types proposal
+    #   --weak-refs: Enable weak references for proper GC of workers
     mkdir -p pkg
     wasm-bindgen \
         --target web \
@@ -79,6 +89,11 @@ if [ "$1" == "--threads" ] || [ "$1" == "-t" ]; then
         --reference-types \
         --weak-refs \
         target/wasm32-unknown-unknown/release/fem3d_rust_2.wasm
+
+    # Copy the snippets directory if it exists (required for wasm-bindgen-rayon)
+    if [ -d "target/wasm32-unknown-unknown/release/snippets" ]; then
+        cp -r target/wasm32-unknown-unknown/release/snippets pkg/
+    fi
 
     echo ""
     echo_info "Multi-threaded WASM build complete!"
