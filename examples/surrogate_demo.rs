@@ -17,7 +17,7 @@
 
 use fem3d_rust_2::optimization::{
     run_hybrid_optimization, run_optimization, AnalysisMode, BarParameters, EAConfig,
-    EAParameters, HybridConfig, Material, OptimizationStrategy, PenaltyType, SurrogateConfig,
+    EAParameters, HybridConfig, Material, OptimizationStrategy, SurrogateConfig,
 };
 use std::time::Instant;
 
