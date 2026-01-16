@@ -1,19 +1,27 @@
 [env]
 RUST_TEST_NOCAPTURE = "1"
 
-# WASM multithreading support requires atomics and bulk-memory features.
+# WASM multithreading support requires atomics, bulk-memory, and mutable-globals features.
 # These flags enable SharedArrayBuffer and atomic operations for web workers.
 #
 # IMPORTANT: For multithreaded WASM builds, you must:
-# 1. Use nightly Rust: rustup default nightly
+# 1. Use nightly Rust: rustup install nightly
 # 2. Add rust-src component: rustup component add rust-src --toolchain nightly
-# 3. Set RUSTFLAGS environment variable (config.toml rustflags don't work with wasm-pack)
+# 3. Run: cargo +nightly build --target wasm32-unknown-unknown --release --features parallel-wasm
 #
-# Build command for multithreaded WASM:
-#   RUSTFLAGS='-C target-feature=+atomics,+bulk-memory,+mutable-globals' \
-#   cargo +nightly build --target wasm32-unknown-unknown -Z build-std=std,panic_abort --features parallel-wasm
-#
-# Or use the provided build script: ./build-wasm.sh
+# Or use the provided build script: ./build-wasm.sh --threads
 
 [target.wasm32-unknown-unknown]
-rustflags = ["-C", "target-feature=+atomics,+bulk-memory,+mutable-globals"]
+rustflags = [
+    "-C", "target-feature=+atomics,+bulk-memory,+mutable-globals",
+    "-C", "link-arg=--shared-memory",
+    "-C", "link-arg=--import-memory",
+    "-C", "link-arg=--max-memory=1073741824",
+    "-C", "link-arg=--export=__wasm_init_tls",
+    "-C", "link-arg=--export=__tls_size",
+    "-C", "link-arg=--export=__tls_align",
+    "-C", "link-arg=--export=__tls_base"
+]
+
+[unstable]
+build-std = ["panic_abort", "std"]
