@@ -64,6 +64,10 @@ if [ "$1" == "--threads" ] || [ "$1" == "-t" ]; then
 
     echo_info "Building with cargo +nightly..."
 
+    # Clean previous build to ensure fresh compilation with correct flags
+    echo_info "Cleaning previous WASM build..."
+    cargo clean --target wasm32-unknown-unknown 2>/dev/null || true
+
     # Build with nightly, atomics, and build-std
     # The -C target-feature flags enable:
     #   +atomics: Atomic operations for SharedArrayBuffer
@@ -71,14 +75,20 @@ if [ "$1" == "--threads" ] || [ "$1" == "-t" ]; then
     #   +mutable-globals: Mutable global variables (required for thread-local storage)
     # The -C link-arg flags configure the linker:
     #   --shared-memory: Enable shared memory (required for Web Workers)
-    #   --max-memory: Set maximum memory size (64MB * 16 pages = 1GB)
+    #   --max-memory: Set maximum memory size to 1GB
     #   --import-memory: Import memory from JS (allows SharedArrayBuffer)
-    RUSTFLAGS='-C target-feature=+atomics,+bulk-memory,+mutable-globals -C link-arg=--shared-memory -C link-arg=--max-memory=1073741824 -C link-arg=--import-memory' \
+    #
+    # -Z build-std builds the standard library from source with atomics support
+    # This is required because the pre-built std doesn't have threading support
+    echo_info "Building with cargo +nightly (this may take a while on first run)..."
+
+    RUSTFLAGS='-C target-feature=+atomics,+bulk-memory,+mutable-globals -C link-arg=--shared-memory -C link-arg=--max-memory=1073741824' \
     cargo +nightly build \
         --target wasm32-unknown-unknown \
         --release \
         --features parallel-wasm \
-        -Z build-std=std,panic_abort
+        -Z build-std=std,panic_abort \
+        -Z build-std-features=panic_immediate_abort
 
     echo_info "Running wasm-bindgen..."
 
