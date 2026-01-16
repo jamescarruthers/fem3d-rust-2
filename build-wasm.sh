@@ -87,8 +87,7 @@ if [ "$1" == "--threads" ] || [ "$1" == "-t" ]; then
         --target wasm32-unknown-unknown \
         --release \
         --features parallel-wasm \
-        -Z build-std=std,panic_abort \
-        -Z build-std-features=panic_immediate_abort
+        -Z build-std=std,panic_abort
 
     echo_info "Running wasm-bindgen..."
 
