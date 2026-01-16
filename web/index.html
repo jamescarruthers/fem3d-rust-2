@@ -302,6 +302,7 @@
     <div class="test-section">
         <h2>WASM Status</h2>
         <div id="wasm-status" class="result info">Loading WASM module...</div>
+        <div id="threading-status" class="result info" style="margin-top: 10px;">Checking multithreading support...</div>
         <div class="memory-bar">
             <div id="memory-fill" class="memory-fill" style="width: 0%"></div>
         </div>
@@ -693,6 +694,9 @@
                 document.getElementById('wasm-status').className = 'result success';
                 document.getElementById('wasm-status').textContent = 'WASM module loaded successfully!';
 
+                // Initialize multithreading if available
+                await initMultithreading();
+
                 // Load materials
                 const materialsJson = wasm.get_materials_json();
                 materials = JSON.parse(materialsJson);
@@ -703,6 +707,69 @@
                 document.getElementById('wasm-status').className = 'result error';
                 document.getElementById('wasm-status').textContent =
                     'Failed to load WASM module.\n\nBuild it first with:\n  wasm-pack build --target web --no-default-features\n\nError: ' + e.message;
+
+                document.getElementById('threading-status').className = 'result error';
+                document.getElementById('threading-status').textContent = 'WASM not loaded - threading unavailable';
+            }
+        }
+
+        // ========== Multithreading Initialization ==========
+        async function initMultithreading() {
+            const threadingStatus = document.getElementById('threading-status');
+
+            // Check if the WASM module has multithreading support
+            if (!wasm.is_multithreading_available || !wasm.is_multithreading_available()) {
+                threadingStatus.className = 'result warning';
+                threadingStatus.textContent =
+                    'Single-threaded mode (parallel-wasm feature not enabled)\n' +
+                    'Build with: wasm-pack build --target web --features parallel-wasm';
+                return;
+            }
+
+            // Check for SharedArrayBuffer support (required for WASM threads)
+            if (typeof SharedArrayBuffer === 'undefined') {
+                threadingStatus.className = 'result warning';
+                threadingStatus.textContent =
+                    'SharedArrayBuffer not available - running single-threaded\n' +
+                    'Server needs COOP/COEP headers for multithreading:\n' +
+                    '  Cross-Origin-Opener-Policy: same-origin\n' +
+                    '  Cross-Origin-Embedder-Policy: require-corp';
+                return;
+            }
+
+            // Initialize thread pool
+            try {
+                const numThreads = navigator.hardwareConcurrency || 4;
+
+                threadingStatus.className = 'result info';
+                threadingStatus.textContent = `Initializing thread pool with ${numThreads} threads...`;
+
+                // Initialize the thread pool (wasm-bindgen-rayon)
+                if (wasm.initThreadPool) {
+                    await wasm.initThreadPool(numThreads);
+
+                    threadingStatus.className = 'result success';
+                    threadingStatus.textContent =
+                        `Multithreading enabled! Using ${numThreads} Web Workers.\n` +
+                        'Parallel computation will be used for FEM analysis.';
+                } else if (wasm.init_thread_pool) {
+                    await wasm.init_thread_pool(numThreads);
+
+                    threadingStatus.className = 'result success';
+                    threadingStatus.textContent =
+                        `Multithreading enabled! Using ${numThreads} Web Workers.\n` +
+                        'Parallel computation will be used for FEM analysis.';
+                } else {
+                    threadingStatus.className = 'result warning';
+                    threadingStatus.textContent =
+                        'Thread pool initialization function not found.\n' +
+                        'Running in single-threaded mode.';
+                }
+            } catch (e) {
+                threadingStatus.className = 'result warning';
+                threadingStatus.textContent =
+                    `Thread pool initialization failed: ${e.message}\n` +
+                    'Running in single-threaded mode.';
             }
         }
 
