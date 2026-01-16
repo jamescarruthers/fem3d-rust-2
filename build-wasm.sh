@@ -73,29 +73,20 @@ if [ "$1" == "--threads" ] || [ "$1" == "-t" ]; then
     rm -rf target/wasm32-unknown-unknown/release/deps 2>/dev/null || true
     rm -rf target/release/.fingerprint 2>/dev/null || true
 
-    # Build with nightly, atomics, and build-std
-    # The -C target-feature flags enable:
-    #   +atomics: Atomic operations for SharedArrayBuffer
-    #   +bulk-memory: Bulk memory operations
-    #   +mutable-globals: Mutable global variables (required for thread-local storage)
-    # The -C link-arg flags configure the linker:
-    #   --shared-memory: Enable shared memory (required for Web Workers)
-    #   --max-memory: Set maximum memory size to 1GB
-    #   --import-memory: Import memory from JS (allows SharedArrayBuffer)
+    # Build with nightly and build-std
+    # All rustflags are configured in .cargo/config.toml including:
+    #   - target-feature=+atomics,+bulk-memory,+mutable-globals
+    #   - linker flags for shared memory and TLS exports
+    #   - build-std configuration in [unstable] section
     #
     # -Z build-std builds the standard library from source with atomics support
     # This is required because the pre-built std doesn't have threading support
     echo_info "Building with cargo +nightly (this may take a while on first run)..."
 
-    # Set CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS to ensure flags apply to build-std
-    # This is more reliable than RUSTFLAGS for build-std compilation
-    export CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS='-C target-feature=+atomics,+bulk-memory,+mutable-globals -C link-arg=--shared-memory -C link-arg=--import-memory -C link-arg=--max-memory=1073741824'
-
     cargo +nightly build \
         --target wasm32-unknown-unknown \
         --release \
-        --features parallel-wasm \
-        -Z build-std=std,panic_abort
+        --features parallel-wasm
 
     echo_info "Running wasm-bindgen..."
 
