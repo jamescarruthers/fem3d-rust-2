@@ -1,6 +1,7 @@
 use fem3d_rust_2::{
-    classify_all_modes, compute_modal_frequencies_sparse_with_shapes,
-    compute_modal_frequencies_with_shapes, generate_bar_mesh_3d, Material, ModeType,
+    classify_all_modes, compute_modal_frequencies_iterative_with_shapes,
+    compute_modal_frequencies_sparse_with_shapes, compute_modal_frequencies_with_shapes,
+    generate_bar_mesh_3d, Material, ModeType,
 };
 use std::time::Instant;
 
@@ -76,6 +77,34 @@ fn benchmark_sparse_sprs(mesh: &fem3d_rust_2::Mesh3d, material: &Material) -> Be
     }
 }
 
+/// Benchmark the experimental iterative (BiCGStab) solver.
+/// This solver may not converge for all problems, especially smaller ones.
+fn benchmark_iterative(mesh: &fem3d_rust_2::Mesh3d, material: &Material) -> BenchResult {
+    let start = Instant::now();
+    let (freqs, mode_shapes) = compute_modal_frequencies_iterative_with_shapes(
+        mesh,
+        material.e,
+        material.nu,
+        material.rho,
+        NUM_MODES,
+    );
+    let elapsed = start.elapsed();
+
+    // Classify modes if we got results
+    let classified = if !freqs.is_empty() {
+        Some(classify_all_modes(&freqs, &mode_shapes, &mesh.nodes))
+    } else {
+        None
+    };
+
+    BenchResult {
+        solver: "Iterative (exp)".to_string(),
+        time_ms: elapsed.as_secs_f64() * 1000.0,
+        freqs,
+        classified,
+    }
+}
+
 fn format_freq(f: Option<&f64>) -> String {
     match f {
         Some(freq) => format!("{:.1}", freq),
@@ -145,6 +174,12 @@ fn main() {
         #[cfg(feature = "sprs-backend")]
         results.push(benchmark_sparse_sprs(&mesh, &sapele));
 
+        // Iterative solver benchmark (experimental)
+        // Only run for larger problems where it might actually converge
+        if dof >= 500 {
+            results.push(benchmark_iterative(&mesh, &sapele));
+        }
+
         // Print results for this mesh size
         for (i, result) in results.iter().enumerate() {
             let mesh_str = if i == 0 { mesh_label.clone() } else { "".to_string() };
@@ -196,6 +231,8 @@ fn main() {
     println!("Notes:");
     println!("  - Dense solver skipped for DOF > 2000 (would take too long)");
     println!("  - Sparse solvers use shift-invert Lanczos algorithm");
+    println!("  - Iterative solver (exp) uses BiCGStab - may not converge for all problems");
+    println!("  - Empty frequencies indicate iterative solver failed to converge");
     println!("  - Times include matrix assembly and eigenvalue computation");
     println!("  - Mode classification uses Soares' corner displacement method");
     println!("  - Analytical first bending mode (Euler-Bernoulli): ~352 Hz");
