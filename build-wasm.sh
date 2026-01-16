@@ -69,7 +69,11 @@ if [ "$1" == "--threads" ] || [ "$1" == "-t" ]; then
     #   +atomics: Atomic operations for SharedArrayBuffer
     #   +bulk-memory: Bulk memory operations
     #   +mutable-globals: Mutable global variables (required for thread-local storage)
-    RUSTFLAGS='-C target-feature=+atomics,+bulk-memory,+mutable-globals' \
+    # The -C link-arg flags configure the linker:
+    #   --shared-memory: Enable shared memory (required for Web Workers)
+    #   --max-memory: Set maximum memory size (64MB * 16 pages = 1GB)
+    #   --import-memory: Import memory from JS (allows SharedArrayBuffer)
+    RUSTFLAGS='-C target-feature=+atomics,+bulk-memory,+mutable-globals -C link-arg=--shared-memory -C link-arg=--max-memory=1073741824 -C link-arg=--import-memory' \
     cargo +nightly build \
         --target wasm32-unknown-unknown \
         --release \
