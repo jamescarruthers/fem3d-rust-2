@@ -2,10 +2,18 @@
 //!
 //! This module provides functions for classifying vibration modes
 //! using the Soares top-corner displacement method.
+//!
+//! ## Parallelization
+//!
+//! When the `parallel` feature is enabled, mode classification is parallelized
+//! using Rayon. This provides speedup when classifying many modes.
 
 use std::collections::HashMap;
 
 use nalgebra::{DMatrix, Vector3};
+
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 use crate::types::{ModeType, DEFAULT_CORNER_TOL, DOF_PER_NODE, Z_DIR_INDEX};
 
@@ -103,6 +111,8 @@ pub fn classify_mode_soares(
 /// `(frequency_hz, mode_index, family_rank)`, where `mode_index` is the column
 /// index in `mode_shapes` and `family_rank` is the 1-based order within its
 /// family after sorting by frequency.
+///
+/// Uses parallel classification when the `parallel` feature is enabled.
 pub fn classify_all_modes(
     frequencies: &[f64],
     mode_shapes: &DMatrix<f64>,
@@ -119,16 +129,17 @@ pub fn classify_all_modes(
         return families;
     };
     let mode_count = mode_shapes.ncols();
+    let num_modes = frequencies.len().min(mode_count);
 
-    for (idx, freq) in frequencies.iter().copied().enumerate() {
-        if idx >= mode_count {
-            break;
-        }
-        let shape_col = mode_shapes.column(idx);
-        let mode_type = classify_mode_soares(shape_col.as_slice(), nodes, corner_indices);
+    // Classify all modes (in parallel when available)
+    let classifications = classify_modes_batch(frequencies, mode_shapes, nodes, corner_indices, num_modes);
+
+    // Group by mode type
+    for (freq, idx, mode_type) in classifications {
         families.entry(mode_type).or_default().push((freq, idx, 0));
     }
 
+    // Sort and assign family ranks
     for modes in families.values_mut() {
         modes.sort_by(|a, b| a.0.total_cmp(&b.0));
         for (i, mode) in modes.iter_mut().enumerate() {
@@ -137,6 +148,45 @@ pub fn classify_all_modes(
     }
 
     families
+}
+
+/// Sequential batch classification of modes.
+#[cfg(not(feature = "parallel"))]
+fn classify_modes_batch(
+    frequencies: &[f64],
+    mode_shapes: &DMatrix<f64>,
+    nodes: &[Vector3<f64>],
+    corner_indices: (usize, usize),
+    num_modes: usize,
+) -> Vec<(f64, usize, ModeType)> {
+    (0..num_modes)
+        .map(|idx| {
+            let freq = frequencies[idx];
+            let shape_col = mode_shapes.column(idx);
+            let mode_type = classify_mode_soares(shape_col.as_slice(), nodes, corner_indices);
+            (freq, idx, mode_type)
+        })
+        .collect()
+}
+
+/// Parallel batch classification of modes.
+#[cfg(feature = "parallel")]
+fn classify_modes_batch(
+    frequencies: &[f64],
+    mode_shapes: &DMatrix<f64>,
+    nodes: &[Vector3<f64>],
+    corner_indices: (usize, usize),
+    num_modes: usize,
+) -> Vec<(f64, usize, ModeType)> {
+    (0..num_modes)
+        .into_par_iter()
+        .map(|idx| {
+            let freq = frequencies[idx];
+            let shape_col = mode_shapes.column(idx);
+            let mode_type = classify_mode_soares(shape_col.as_slice(), nodes, corner_indices);
+            (freq, idx, mode_type)
+        })
+        .collect()
 }
 
 #[cfg(test)]
