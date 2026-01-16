@@ -71,10 +71,13 @@ if [ "$1" == "--threads" ] || [ "$1" == "-t" ]; then
     echo_info "Running wasm-bindgen..."
 
     # Run wasm-bindgen to generate JS bindings
+    # --reference-types and --weak-refs are required for proper thread pool support
     mkdir -p pkg
     wasm-bindgen \
         --target web \
         --out-dir pkg \
+        --reference-types \
+        --weak-refs \
         target/wasm32-unknown-unknown/release/fem3d_rust_2.wasm
 
     echo ""
