@@ -82,7 +82,7 @@ if [ "$1" == "--threads" ] || [ "$1" == "-t" ]; then
     # This is required because the pre-built std doesn't have threading support
     echo_info "Building with cargo +nightly (this may take a while on first run)..."
 
-    RUSTFLAGS='-C target-feature=+atomics,+bulk-memory,+mutable-globals -C link-arg=--shared-memory -C link-arg=--max-memory=1073741824' \
+    RUSTFLAGS='-C target-feature=+atomics,+bulk-memory,+mutable-globals -C link-arg=--shared-memory -C link-arg=--import-memory -C link-arg=--max-memory=1073741824' \
     cargo +nightly build \
         --target wasm32-unknown-unknown \
         --release \
