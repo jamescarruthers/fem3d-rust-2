@@ -32,17 +32,30 @@ class COOPCOEPHandler(http.server.SimpleHTTPRequestHandler):
         # Proper MIME types for WASM
         super().end_headers()
 
+    def do_GET(self):
+        # Handle requests for pkg/ directory by redirecting to the main JS file
+        # This fixes the issue where web workers try to import from the directory URL
+        if self.path.endswith('/pkg/') or self.path.endswith('/pkg'):
+            # Redirect to the main entry point
+            self.send_response(302)
+            self.send_header('Location', self.path.rstrip('/') + '/fem3d_rust_2.js')
+            self.end_headers()
+            return
+        return super().do_GET()
+
     def guess_type(self, path):
-        """Add proper MIME type for .wasm files."""
+        """Add proper MIME type for .wasm and .js files."""
         if path.endswith(".wasm"):
             return "application/wasm"
+        if path.endswith(".js"):
+            return "application/javascript"
         return super().guess_type(path)
 
 
 def main():
-    # Change to the parent directory (project root) so we can serve both
-    # the web/ folder and the pkg/ folder
-    os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    # Change to the project root so we can serve both web/ and pkg/
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    os.chdir(project_root)
 
     with socketserver.TCPServer(("", PORT), COOPCOEPHandler) as httpd:
         print(f"""
