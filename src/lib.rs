@@ -1,13 +1,14 @@
 //! FEM3D-Rust: 3D Finite Element Modal Analysis Library
 //!
 //! This library provides tools for performing modal analysis on 3D bar structures
-//! using hexahedral (Hex8) finite elements and 2D Timoshenko beam elements.
+//! using hexahedral (Hex8) finite elements and Timoshenko beam elements.
 //!
 //! It supports:
 //! - Mesh generation for uniform and adaptive grids
 //! - Cut geometry for undercut bar profiles
 //! - Dense and sparse eigenvalue solvers
 //! - Mode classification using Soares' method
+//! - 1D Timoshenko frame elements (3 DOF/node: axial, transverse, rotation)
 //! - 2D Timoshenko beam analysis for fast frequency estimation
 //! - Evolutionary optimization for bar tuning
 //!
@@ -37,9 +38,40 @@
 //!     &cuts, 0.5, 0.03, 0.024, 12e9, 0.35, 640.0, 100, 4
 //! );
 //! ```
+//!
+//! # Example (1D Timoshenko Frame Analysis)
+//!
+//! ```
+//! use fem3d_rust_2::{
+//!     compute_frequencies_cantilever, compute_frequencies_free_free,
+//!     BoundaryCondition, CrossSection, Mesh1D, assemble_global_matrices_1d,
+//!     apply_boundary_conditions, solve_eigenvalue_problem,
+//! };
+//!
+//! // Quick analysis with convenience function
+//! let freqs = compute_frequencies_cantilever(
+//!     0.5,    // length (m)
+//!     0.02,   // width (m)
+//!     0.03,   // height (m)
+//!     200e9,  // Young's modulus (Pa)
+//!     0.3,    // Poisson's ratio
+//!     7850.0, // density (kg/m³)
+//!     50,     // number of elements
+//!     6,      // number of modes
+//! );
+//!
+//! // Or with custom mesh and boundary conditions
+//! let cs = CrossSection::rectangular(0.02, 0.03);
+//! let mesh = Mesh1D::uniform_beam(0.5, 50, cs);
+//! let (mut k, mut m) = assemble_global_matrices_1d(&mesh, 200e9, 7850.0, 0.3, true);
+//! apply_boundary_conditions(&mut k, &mut m, BoundaryCondition::Fixed, BoundaryCondition::Free, mesh.num_nodes);
+//! let freqs = solve_eigenvalue_problem(&k, &m, 6);
+//! ```
 
 // Module declarations
 pub mod assembly;
+pub mod beam1d;
+pub mod beam1d_solver;
 pub mod beam2d;
 pub mod beam2d_solver;
 pub mod cuts;
@@ -110,6 +142,25 @@ pub use beam2d::{
 pub use beam2d_solver::{
     assemble_global_matrices_2d, compute_modal_frequencies_2d, compute_modal_frequencies_2d_from_cuts,
     solve_generalized_eigenvalue,
+};
+
+// 1D Timoshenko frame element
+pub use beam1d::{
+    compute_element_mass_consistent as compute_beam1d_element_mass_consistent,
+    compute_element_mass_lumped as compute_beam1d_element_mass_lumped,
+    compute_element_stiffness as compute_beam1d_element_stiffness,
+    second_moment_of_area_circle, second_moment_of_area_rect,
+    shear_modulus as beam1d_shear_modulus, CrossSection, DOF_PER_ELEMENT_1D, DOF_PER_NODE_1D,
+    KAPPA as KAPPA_1D,
+};
+
+// 1D beam solver
+pub use beam1d_solver::{
+    apply_boundary_conditions, assemble_global_matrices as assemble_global_matrices_1d,
+    compute_frequencies_cantilever, compute_frequencies_free_free,
+    compute_frequencies_simply_supported, compute_frequencies_uniform_beam,
+    get_constrained_dofs, reduce_matrices, solve_eigenvalue_problem,
+    solve_eigenvalue_problem_with_shapes, BoundaryCondition, Element1D, Mesh1D,
 };
 
 // Optimization module re-exports
